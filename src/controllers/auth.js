@@ -1,6 +1,5 @@
 const bcrypt = require('bcryptjs');
 const crypto = require('crypto');
-const { v4: uuidv4 } = require('uuid');
 const prisma = require('../lib/prisma');
 const { signAccess, signRefresh, verifyRefresh } = require('../lib/jwt');
 const audit = require('../lib/audit');
@@ -24,7 +23,7 @@ async function register(req, res, next) {
     }
 
     const passwordHash = await bcrypt.hash(password, 12);
-    const slug = slugify(orgName) + '-' + uuidv4().slice(0, 6);
+    const slug = slugify(orgName) + '-' + crypto.randomUUID().slice(0, 6);
 
     const user = await prisma.$transaction(async (tx) => {
       const newUser = await tx.user.create({
@@ -48,6 +47,7 @@ async function register(req, res, next) {
         actor:          { id: newUser.id, email },
         organisationId: org.id,
         ipAddress:      req.ip,
+        client:         tx,
       });
 
       return newUser;
