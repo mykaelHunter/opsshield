@@ -1,9 +1,73 @@
-node_modules/
+# ── Secrets — never commit these, no exceptions ─────────────────────
 .env
-*.tfstate
-*.tfstate.backup
-.terraform/
-coverage/
-*.log
-.DS_Store
+.env.*
+!.env.example
+*.pem
+*.key
+*.crt
+
+# ── Node ─────────────────────────────────────────────────────────────
+node_modules/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+.npm/
+.pnpm-store/
+
+# ── Build / test output ──────────────────────────────────────────────
 dist/
+build/
+coverage/
+.nyc_output/
+
+# ── Prisma ────────────────────────────────────────────────────────────
+# Generated client — regenerated via `npx prisma generate`, don't commit
+/generated/
+prisma/*.db
+prisma/dev.db*
+
+# ── Logs ──────────────────────────────────────────────────────────────
+*.log
+logs/
+
+# ── Terraform ─────────────────────────────────────────────────────────
+**/.terraform/
+**/.terraform.lock.hcl
+*.tfstate
+*.tfstate.*
+*.tfstate.backup
+crash.log
+crash.*.log
+override.tf
+override.tf.json
+*_override.tf
+*_override.tf.json
+.terraformrc
+terraform.rc
+
+# Variable files often hold environment-specific values — only the
+# checked-in *.tfvars.example templates should ever be committed
+*.tfvars
+*.tfvars.json
+!*.tfvars.example
+
+# Plan output can contain secret values in plaintext
+*.tfplan
+tfplan*
+
+# ── OS / editor cruft ─────────────────────────────────────────────────
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# ── Docker ────────────────────────────────────────────────────────────
+*.pid
+
+# ── Misc project artifacts ───────────────────────────────────────────
+*.zip
+*.tar.gz
+.cache/
