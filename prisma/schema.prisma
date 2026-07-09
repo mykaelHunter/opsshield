@@ -1,0 +1,174 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model Organisation {
+  id          String   @id @default(uuid())
+  name        String
+  slug        String   @unique
+  plan        Plan     @default(FREE)
+  paystackRef String?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  members     Member[]
+  tasks       Task[]
+  invites     Invite[]
+  auditLogs   AuditLog[]
+  billing     Billing[]
+}
+
+model User {
+  id           String   @id @default(uuid())
+  email        String   @unique
+  passwordHash String
+  firstName    String
+  lastName     String
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  members      Member[]
+  assignedTasks Task[]  @relation("AssignedTo")
+  createdTasks  Task[]  @relation("CreatedBy")
+  approvals     Approval[]
+  refreshTokens RefreshToken[]
+}
+
+model Member {
+  id             String       @id @default(uuid())
+  role           MemberRole   @default(MEMBER)
+  joinedAt       DateTime     @default(now())
+
+  userId         String
+  organisationId String
+
+  user           User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+  organisation   Organisation @relation(fields: [organisationId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, organisationId])
+}
+
+model Invite {
+  id             String       @id @default(uuid())
+  email          String
+  token          String       @unique @default(uuid())
+  role           MemberRole   @default(MEMBER)
+  expiresAt      DateTime
+  acceptedAt     DateTime?
+  createdAt      DateTime     @default(now())
+
+  organisationId String
+  organisation   Organisation @relation(fields: [organisationId], references: [id], onDelete: Cascade)
+}
+
+model Task {
+  id             String     @id @default(uuid())
+  title          String
+  description    String?
+  status         TaskStatus @default(PENDING)
+  requiresApproval Boolean  @default(false)
+  createdAt      DateTime   @default(now())
+  updatedAt      DateTime   @updatedAt
+
+  organisationId String
+  createdById    String
+  assignedToId   String?
+
+  organisation   Organisation @relation(fields: [organisationId], references: [id], onDelete: Cascade)
+  createdBy      User         @relation("CreatedBy", fields: [createdById], references: [id])
+  assignedTo     User?        @relation("AssignedTo", fields: [assignedToId], references: [id])
+  approvals      Approval[]
+}
+
+model Approval {
+  id        String         @id @default(uuid())
+  status    ApprovalStatus @default(PENDING)
+  note      String?
+  createdAt DateTime       @default(now())
+
+  taskId    String
+  userId    String
+
+  task      Task @relation(fields: [taskId], references: [id], onDelete: Cascade)
+  user      User @relation(fields: [userId], references: [id])
+}
+
+model Billing {
+  id              String        @id @default(uuid())
+  paystackRef     String?       @unique
+  paystackEvent   String?
+  amount          Int
+  currency        String        @default("NGN")
+  status          BillingStatus @default(PENDING)
+  plan            Plan
+  createdAt       DateTime      @default(now())
+
+  organisationId  String
+  organisation    Organisation  @relation(fields: [organisationId], references: [id], onDelete: Cascade)
+}
+
+// Append-only audit log — application enforces no updates or deletes
+// DB role for app user should have INSERT only on this table
+model AuditLog {
+  id             String   @id @default(uuid())
+  action         String
+  resource       String
+  resourceId     String?
+  actorId        String?
+  actorEmail     String?
+  metadata       Json?
+  ipAddress      String?
+  hash           String   // SHA-256 of (previousHash + action + timestamp)
+  previousHash   String?
+  createdAt      DateTime @default(now())
+
+  organisationId String?
+  organisation   Organisation? @relation(fields: [organisationId], references: [id])
+}
+
+model RefreshToken {
+  id        String   @id @default(uuid())
+  token     String   @unique @default(uuid())
+  expiresAt DateTime
+  createdAt DateTime @default(now())
+
+  userId    String
+  user      User @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+
+enum Plan {
+  FREE
+  STARTER
+  PRO
+}
+
+enum MemberRole {
+  ADMIN
+  MEMBER
+}
+
+enum TaskStatus {
+  PENDING
+  IN_PROGRESS
+  AWAITING_APPROVAL
+  APPROVED
+  REJECTED
+  DONE
+}
+
+enum ApprovalStatus {
+  PENDING
+  APPROVED
+  REJECTED
+}
+
+enum BillingStatus {
+  PENDING
+  SUCCESS
+  FAILED
+}
