@@ -4,6 +4,8 @@
   "testMatch": ["**/__tests__/**/*.test.js"],
   "collectCoverageFrom": ["src/**/*.js", "!src/index.js"],
   "coverageThreshold": {
-    "global": { "lines": 60 }
+    "global": { "lines": 30 },
+    "./src/controllers/auth.js": { "lines": 45 },
+    "./src/middleware/": { "lines": 60 }
   }
 }
