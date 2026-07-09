@@ -3,7 +3,7 @@
 Module-based structure, one root config per environment.
 
 ```
-terraform/
+infra/
 ├── modules/
 │   ├── vpc/          VPC, public/private subnets, NAT, VPC Flow Logs
 │   ├── dns_acm/      Route53 hosted zone, ACM cert (DNS validated)

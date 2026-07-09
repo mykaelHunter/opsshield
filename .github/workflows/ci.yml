@@ -166,8 +166,8 @@ jobs:
             -var="budget_alert_email=${{ secrets.BUDGET_ALERT_EMAIL }}"
         env:
           # Values injected via TF_VAR_* rather than committed to any
-          # .tfvars file in the repo — see terraform/README.md and
-          # terraform/envs/prod/variables.tf for why these specifically
+          # .tfvars file in the repo — see infra/README.md and
+          # infra/envs/prod/variables.tf for why these specifically
           # are treated as secrets rather than plain -var flags above.
           TF_VAR_paystack_secret_key: ${{ secrets.PAYSTACK_SECRET_KEY }}
           TF_VAR_smtp_pass: ${{ secrets.SMTP_PASS }}

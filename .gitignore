@@ -48,6 +48,7 @@ terraform.rc
 # Variable files often hold environment-specific values — only the
 # checked-in *.tfvars.example templates should ever be committed
 *.tfvars
+*.auto.tfvars
 *.tfvars.json
 !*.tfvars.example
 
