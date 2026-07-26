@@ -2,6 +2,8 @@ const bcrypt = require('bcryptjs');
 const prisma = require('../lib/prisma');
 const audit  = require('../lib/audit');
 const logger = require('../lib/logger');
+const mailer = require('../lib/mailer');
+const { hashToken, generateRawToken } = require('../lib/tokenHash');
 
 async function invite(req, res, next) {
   try {
@@ -21,18 +23,33 @@ async function invite(req, res, next) {
       if (existing) return res.status(409).json({ error: 'User is already a member' });
     }
 
+    const rawToken = generateRawToken();
+
     const invite = await prisma.invite.create({
       data: {
         email,
         role,
+        tokenHash:      hashToken(rawToken),
         organisationId: req.organisation.id,
         expiresAt:      new Date(Date.now() + 7 * 24 * 60 * 60 * 1000),
       }
     });
 
-    // TODO: send invite email via Nodemailer
-    // The invite URL should be: ${FRONTEND_URL}/accept-invite?token=${invite.token}
-    logger.info('Invite created', { email, orgId: req.organisation.id, token: invite.token });
+    const inviteUrl = `${process.env.FRONTEND_URL}/accept-invite?token=${rawToken}`;
+
+    try {
+      await mailer.sendInvite({ to: email, inviteUrl, role });
+    } catch (err) {
+      // No way for the invitee to ever accept an invite they never received —
+      // don't leave a dangling row behind. Roll back and surface the failure
+      // rather than silently logging it, unlike the password-reset email
+      // path (which must stay silent to avoid leaking account existence —
+      // no such constraint applies here, the invite ID is already known
+      // to the caller).
+      await prisma.invite.delete({ where: { id: invite.id } });
+      logger.error('Invite email failed to send, invite rolled back', { err: err.message, email });
+      return res.status(502).json({ error: 'Failed to send invitation email' });
+    }
 
     await audit.log({
       action:         'member.invite',
@@ -52,8 +69,8 @@ async function acceptInvite(req, res, next) {
   try {
     const { token, password, firstName, lastName } = req.body;
 
-    const invite = await prisma.invite.findUnique({ where: { token } });
-    if (!invite || invite.expiresAt < new Date() || invite.acceptedAt) {
+    const invite = await prisma.invite.findUnique({ where: { tokenHash: hashToken(token) } });
+    if (!invite || invite.deletedAt || invite.expiresAt < new Date() || invite.acceptedAt) {
       return res.status(400).json({ error: 'Invalid or expired invitation' });
     }
 

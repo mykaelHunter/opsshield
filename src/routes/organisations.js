@@ -26,4 +26,9 @@ router.get('/:orgId/audit-log/verify',
   orgController.verifyAuditChain
 );
 
+router.delete('/:orgId',
+  authenticate, requireOrgMember, requireAdmin,
+  orgController.remove
+);
+
 module.exports = router;

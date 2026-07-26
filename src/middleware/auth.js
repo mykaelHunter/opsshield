@@ -50,6 +50,13 @@ async function requireOrgMember(req, res, next) {
     return res.status(403).json({ error: 'You are not a member of this organisation' });
   }
 
+  // INC-023: a soft-deleted org must behave as if it no longer exists for
+  // every member, including admins — this is the single choke point every
+  // org-scoped route passes through, so checking here covers all of them.
+  if (member.organisation.deletedAt) {
+    return res.status(403).json({ error: 'You are not a member of this organisation' });
+  }
+
   req.member = member;
   req.organisation = member.organisation;
   next();

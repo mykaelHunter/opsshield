@@ -5,6 +5,7 @@ const { signAccess, signRefresh, verifyRefresh } = require('../lib/jwt');
 const audit = require('../lib/audit');
 const logger = require('../lib/logger');
 const { sendPasswordResetEmail } = require('../lib/mailer');
+const { hashToken, generateRawToken } = require('../lib/tokenHash');
 
 const RESET_TOKEN_TTL_MS = 30 * 60 * 1000; // 30 minutes
 
@@ -190,8 +191,8 @@ async function forgotPassword(req, res) {
     // Raw token goes in the email link; only its hash is ever persisted.
     // A DB leak alone can't be used to reset an account — the raw token
     // was only ever transmitted over the (assumed-private) email channel.
-    const rawToken = crypto.randomBytes(32).toString('hex');
-    const tokenHash = crypto.createHash('sha256').update(rawToken).digest('hex');
+    const rawToken = generateRawToken();
+    const tokenHash = hashToken(rawToken);
 
     await prisma.user.update({
       where: { id: user.id },
@@ -222,7 +223,7 @@ async function resetPassword(req, res, next) {
   try {
     const { token, password } = req.body;
 
-    const tokenHash = crypto.createHash('sha256').update(token).digest('hex');
+    const tokenHash = hashToken(token);
 
     const user = await prisma.user.findFirst({
       where: { resetTokenHash: tokenHash },

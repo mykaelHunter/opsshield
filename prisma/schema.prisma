@@ -14,6 +14,7 @@ model Organisation {
   slug        String   @unique
   plan        Plan     @default(FREE)
   paystackRef String?
+  deletedAt   DateTime?
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
 
@@ -46,6 +47,7 @@ model Member {
   id             String       @id @default(uuid())
   role           MemberRole   @default(MEMBER)
   joinedAt       DateTime     @default(now())
+  deletedAt      DateTime?
 
   userId         String
   organisationId String
@@ -59,10 +61,11 @@ model Member {
 model Invite {
   id             String       @id @default(uuid())
   email          String
-  token          String       @unique @default(uuid())
+  tokenHash      String       @unique
   role           MemberRole   @default(MEMBER)
   expiresAt      DateTime
   acceptedAt     DateTime?
+  deletedAt      DateTime?
   createdAt      DateTime     @default(now())
 
   organisationId String
@@ -75,6 +78,7 @@ model Task {
   description    String?
   status         TaskStatus @default(PENDING)
   requiresApproval Boolean  @default(false)
+  deletedAt      DateTime?
   createdAt      DateTime   @default(now())
   updatedAt      DateTime   @updatedAt
 

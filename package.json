@@ -11,7 +11,7 @@
     "db:studio": "prisma studio",
     "db:seed": "node prisma/seed.js",
     "lint": "eslint src/",
-    "test": "jest --coverage"
+    "test": "jest --coverage --runInBand"
   },
   "dependencies": {
     "@prisma/client": "^5.10.0",
