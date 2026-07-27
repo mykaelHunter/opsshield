@@ -14,6 +14,9 @@ email_from  = "noreply@opsshield.io"
 
 budget_alert_email = "team@opsshield.io"
 
+github_org  = "your-org"   # GitHub org/user that owns this repo
+github_repo = "opsshield"  # repo name only, no org prefix
+
 # image_uri is intentionally left out here — CI/CD passes it explicitly
 # on every apply: terraform apply -var="image_uri=<ecr-uri>:<git-sha>"
 

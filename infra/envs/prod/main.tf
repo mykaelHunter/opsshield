@@ -24,7 +24,17 @@ module "frontend" {
   tags    = local.tags
 }
 
+module "github_oidc" {
+  source = "../../modules/github_oidc"
+
+  github_org          = var.github_org
+  github_repo         = var.github_repo
+  ecr_repository_arn  = module.ecr.repository_arn
+  tags                = local.tags
+}
+
 module "vpc" {
+
   source = "../../modules/vpc"
 
   name                  = local.name

@@ -45,3 +45,8 @@ output "rds_endpoint" {
 output "cloudwatch_log_group" {
   value = module.cloudwatch.log_group_name
 }
+
+output "github_deploy_role_arn" {
+  description = "Set this as the AWS_DEPLOY_ROLE_ARN secret in the GitHub repo (Settings > Secrets and variables > Actions)"
+  value       = module.github_oidc.role_arn
+}

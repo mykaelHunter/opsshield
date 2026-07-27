@@ -108,6 +108,33 @@ terraform apply -var="image_uri=$(terraform output -raw ecr_repository_url):late
 Every apply after that is a normal `terraform apply` — no more targeting needed,
 since the resources already exist.
 
+## CI/CD deploy role (bootstrap, first time only)
+
+`ci.yml`'s `build` and `deploy` jobs assume an AWS role via GitHub OIDC
+(`role-to-assume: ${{ secrets.AWS_DEPLOY_ROLE_ARN }}`). That role is created
+by `module.github_oidc` in this same stack — same chicken-and-egg problem as
+step 1 above: CI can't apply Terraform until the role it needs to assume
+already exists, so the first apply has to happen from a local/admin session,
+not from CI.
+
+```bash
+# Uses your local AWS credentials, not CI's — the role doesn't exist yet.
+terraform apply -target=module.github_oidc -var="image_uri=placeholder"
+
+terraform output github_deploy_role_arn
+```
+
+Then set that ARN as a repo secret: **Settings > Secrets and variables >
+Actions > New repository secret**, name it `AWS_DEPLOY_ROLE_ARN`. Also make
+sure `AWS_REGION` is set as a secret (`eu-west-1`) — both are referenced in
+`ci.yml`. After that, every push to `main` can authenticate on its own and
+`terraform apply` runs from CI as normal.
+
+The role's trust policy only allows `sts:AssumeRoleWithWebIdentity` from
+workflow runs on `github_org/github_repo`'s `main` branch (see
+`allowed_branches` in `variables.tf`) — a PR from a fork or a push to any
+other branch can't assume it, even with a copy of the workflow file.
+
 CI/CD passes the image tag explicitly rather than it living in a `.tfvars` file:
 
 ```bash

@@ -73,3 +73,15 @@ variable "email_from" {
 variable "budget_alert_email" {
   type = string
 }
+
+variable "github_org" {
+  type        = string
+  description = "GitHub org/user that owns this repo - scopes who can assume the deploy role via OIDC"
+}
+
+variable "github_repo" {
+  type        = string
+  default     = "opsshield"
+  description = "Repo name only, no org prefix"
+}
+
