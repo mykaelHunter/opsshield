@@ -168,7 +168,7 @@ jobs:
 
       - name: Terraform apply
         run: |
-          terraform apply -auto-approve \
+          terraform apply -auto-approve -input=false \
             -var="image_uri=${{ needs.build.outputs.image_uri }}" \
             -var="domain_name=${{ secrets.DOMAIN_NAME }}" \
             -var="parent_zone_name=${{ secrets.PARENT_ZONE_NAME }}" \

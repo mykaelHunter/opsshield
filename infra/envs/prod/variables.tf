@@ -76,6 +76,7 @@ variable "budget_alert_email" {
 
 variable "github_org" {
   type        = string
+  default     = "mykaelHunter"
   description = "GitHub org/user that owns this repo - scopes who can assume the deploy role via OIDC"
 }
 
@@ -87,11 +88,13 @@ variable "github_repo" {
 
 variable "github_owner_id" {
   type        = string
+  default     = "6595875"
   description = "Numeric GitHub owner ID - required for the immutable OIDC subject claim format. See infra/modules/github_oidc/main.tf for how to find it."
 }
 
 variable "github_repo_id" {
   type        = string
+  default     = "1294943805"
   description = "Numeric GitHub repository ID - required for the immutable OIDC subject claim format."
 }
 
