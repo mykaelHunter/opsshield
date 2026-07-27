@@ -94,6 +94,12 @@ async function update(req, res, next) {
       if (req.body[field] !== undefined) data[field] = req.body[field];
     }
 
+    // INC-013: a task that requires approval can't skip straight to DONE —
+    // it must pass through APPROVED first (via the /approve endpoint below).
+    if (data.status === 'DONE' && existing.requiresApproval && existing.status !== 'APPROVED') {
+      return res.status(400).json({ error: 'Task requires approval before it can be marked DONE' });
+    }
+
     const task = await prisma.task.update({
       where: { id: existing.id },
       data,
@@ -141,6 +147,11 @@ async function approve(req, res, next) {
       where: { id: req.params.taskId, organisationId: req.organisation.id }
     });
     if (!task) return res.status(404).json({ error: 'Task not found' });
+    // INC-014: the person who created the task can't also be the one who
+    // approves it — that defeats the point of an approval step entirely.
+    if (task.createdById === req.user.id) {
+      return res.status(403).json({ error: 'Task creator cannot approve their own task' });
+    }
     if (task.status !== 'AWAITING_APPROVAL') {
       return res.status(400).json({ error: 'Task is not awaiting approval' });
     }
@@ -171,6 +182,12 @@ async function reject(req, res, next) {
       where: { id: req.params.taskId, organisationId: req.organisation.id }
     });
     if (!task) return res.status(404).json({ error: 'Task not found' });
+    if (task.createdById === req.user.id) {
+      return res.status(403).json({ error: 'Task creator cannot reject their own task' });
+    }
+    if (task.status !== 'AWAITING_APPROVAL') {
+      return res.status(400).json({ error: 'Task is not awaiting approval' });
+    }
 
     const [approval, updated] = await prisma.$transaction([
       prisma.approval.create({

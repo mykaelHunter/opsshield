@@ -1,9 +1,13 @@
 const bcrypt = require('bcryptjs');
-const { v4: uuidv4 } = require('uuid');
+const crypto = require('crypto');
 const prisma = require('../lib/prisma');
 const { signAccess, signRefresh, verifyRefresh } = require('../lib/jwt');
 const audit = require('../lib/audit');
 const logger = require('../lib/logger');
+const { sendPasswordResetEmail } = require('../lib/mailer');
+const { hashToken, generateRawToken } = require('../lib/tokenHash');
+
+const RESET_TOKEN_TTL_MS = 30 * 60 * 1000; // 30 minutes
 
 function slugify(name) {
   return name.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/(^-|-$)/g, '');
@@ -20,7 +24,7 @@ async function register(req, res, next) {
     }
 
     const passwordHash = await bcrypt.hash(password, 12);
-    const slug = slugify(orgName) + '-' + uuidv4().slice(0, 6);
+    const slug = slugify(orgName) + '-' + crypto.randomUUID().slice(0, 6);
 
     const user = await prisma.$transaction(async (tx) => {
       const newUser = await tx.user.create({
@@ -44,6 +48,7 @@ async function register(req, res, next) {
         actor:          { id: newUser.id, email },
         organisationId: org.id,
         ipAddress:      req.ip,
+        client:         tx,
       });
 
       return newUser;
@@ -183,10 +188,31 @@ async function forgotPassword(req, res) {
   const user = await prisma.user.findUnique({ where: { email } }).catch(() => null);
 
   if (user) {
-    // TODO: generate reset token, store with expiry, send email via Nodemailer
-    // Implementation left for the team — this is a security-sensitive flow
-    // that requires: constant-time token comparison, single-use tokens,
-    // expiry of 1 hour, and rate limiting (already applied at router level)
+    // Raw token goes in the email link; only its hash is ever persisted.
+    // A DB leak alone can't be used to reset an account — the raw token
+    // was only ever transmitted over the (assumed-private) email channel.
+    const rawToken = generateRawToken();
+    const tokenHash = hashToken(rawToken);
+
+    await prisma.user.update({
+      where: { id: user.id },
+      data: {
+        resetTokenHash: tokenHash,
+        resetTokenExpiry: new Date(Date.now() + RESET_TOKEN_TTL_MS),
+      },
+    });
+
+    const resetUrl = `${process.env.FRONTEND_URL}/reset-password?token=${rawToken}`;
+    await sendPasswordResetEmail(user.email, resetUrl);
+
+    await audit.log({
+      action: 'auth.password_reset.requested',
+      resource: 'user',
+      resourceId: user.id,
+      actor: { id: user.id, email: user.email },
+      ipAddress: req.ip,
+    });
+
     logger.info('Password reset requested', { userId: user.id });
   }
 
@@ -194,8 +220,48 @@ async function forgotPassword(req, res) {
 }
 
 async function resetPassword(req, res, next) {
-  // TODO: implement — verify token, hash new password, invalidate all refresh tokens
-  return res.status(501).json({ error: 'Not implemented yet — your task for Week 1' });
+  try {
+    const { token, password } = req.body;
+
+    const tokenHash = hashToken(token);
+
+    const user = await prisma.user.findFirst({
+      where: { resetTokenHash: tokenHash },
+    });
+
+    if (!user || !user.resetTokenExpiry || user.resetTokenExpiry < new Date()) {
+      // Same generic error whether the token is missing, wrong, or expired
+      return res.status(400).json({ error: 'Invalid or expired reset token' });
+    }
+
+    const passwordHash = await bcrypt.hash(password, 12);
+
+    await prisma.$transaction([
+      prisma.user.update({
+        where: { id: user.id },
+        data: {
+          passwordHash,
+          resetTokenHash: null,
+          resetTokenExpiry: null, // single-use: cleared immediately on success
+        },
+      }),
+      // Revoke every existing session — if an attacker was riding a
+      // stolen session, a password reset should end it, not leave it live
+      prisma.refreshToken.deleteMany({ where: { userId: user.id } }),
+    ]);
+
+    await audit.log({
+      action: 'auth.password_reset.completed',
+      resource: 'user',
+      resourceId: user.id,
+      actor: { id: user.id, email: user.email },
+      ipAddress: req.ip,
+    });
+
+    return res.json({ message: 'Password has been reset. Please log in again.' });
+  } catch (err) {
+    next(err);
+  }
 }
 
 async function me(req, res) {

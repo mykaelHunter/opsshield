@@ -8,8 +8,8 @@ const logger = require('./logger');
  * making tampering detectable — changing one entry invalidates all entries after it.
  */
 
-async function getLastHash(organisationId) {
-  const last = await prisma.auditLog.findFirst({
+async function getLastHash(client, organisationId) {
+  const last = await client.auditLog.findFirst({
     where: { organisationId },
     orderBy: { createdAt: 'desc' },
     select: { hash: true },
@@ -19,18 +19,19 @@ async function getLastHash(organisationId) {
 
 function computeHash(previousHash, action, timestamp) {
   return crypto
-    .createHash('sha256')
-    .update(`${previousHash || ''}:${action}:${timestamp}`)
-    .digest('hex');
+  .createHash('sha256')
+  .update(`${previousHash || ''}:${action}:${timestamp}`)
+  .digest('hex');
 }
 
-async function log({ action, resource, resourceId, actor, organisationId, metadata, ipAddress }) {
+async function log({ action, resource, resourceId, actor, organisationId, metadata, ipAddress, client }) {
+  const db = client || prisma;
   try {
     const timestamp = new Date();
-    const previousHash = await getLastHash(organisationId);
+    const previousHash = await getLastHash(db, organisationId);
     const hash = computeHash(previousHash, action, timestamp.toISOString());
 
-    await prisma.auditLog.create({
+    await db.auditLog.create({
       data: {
         action,
         resource,

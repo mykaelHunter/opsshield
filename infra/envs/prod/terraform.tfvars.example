@@ -1,0 +1,25 @@
+# Copy to terraform.tfvars and fill in NON-SENSITIVE values only.
+# terraform.tfvars is gitignored — do not put secrets here anyway;
+# use TF_VAR_* environment variables for those (see variables.tf comments).
+
+aws_region  = "eu-west-1"
+domain_name = "opsshield.io"
+# parent_zone_name = "terra-hunter.com"  # uncomment + set only if domain_name
+                                          # is a subdomain of a zone already
+                                          # hosted in this same AWS account
+smtp_user   = "noreply@opsshield.io"
+smtp_host   = "smtp.gmail.com"
+smtp_port   = "587"
+email_from  = "noreply@opsshield.io"
+
+budget_alert_email = "team@opsshield.io"
+
+github_org  = "your-org"   # GitHub org/user that owns this repo
+github_repo = "opsshield"  # repo name only, no org prefix
+
+# image_uri is intentionally left out here — CI/CD passes it explicitly
+# on every apply: terraform apply -var="image_uri=<ecr-uri>:<git-sha>"
+
+# Set these as environment variables before running terraform apply, never here:
+#   export TF_VAR_paystack_secret_key="sk_live_..."
+#   export TF_VAR_smtp_pass="..."

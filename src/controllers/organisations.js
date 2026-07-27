@@ -67,4 +67,33 @@ async function verifyAuditChain(req, res, next) {
   } catch (err) { next(err); }
 }
 
-module.exports = { get, update, auditLog, verifyAuditChain };
+async function remove(req, res, next) {
+  try {
+    const orgId = req.organisation.id;
+    const now = new Date();
+
+    // Soft delete, not a real DELETE — the org row and all its children
+    // stay in place (audit trail, billing history, etc. must survive this),
+    // they're just marked deletedAt and requireOrgMember treats that as
+    // "doesn't exist" for every subsequent request.
+    await prisma.$transaction([
+      prisma.organisation.update({ where: { id: orgId }, data: { deletedAt: now } }),
+      prisma.task.updateMany({ where: { organisationId: orgId }, data: { deletedAt: now } }),
+      prisma.invite.updateMany({ where: { organisationId: orgId }, data: { deletedAt: now } }),
+      prisma.member.updateMany({ where: { organisationId: orgId }, data: { deletedAt: now } }),
+    ]);
+
+    await audit.log({
+      action:         'organisation.delete',
+      resource:       'organisation',
+      resourceId:     orgId,
+      actor:          req.user,
+      organisationId: orgId,
+      ipAddress:      req.ip,
+    });
+
+    return res.json({ message: 'Organisation deleted' });
+  } catch (err) { next(err); }
+}
+
+module.exports = { get, update, auditLog, verifyAuditChain, remove };

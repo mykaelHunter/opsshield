@@ -1,6 +1,6 @@
 const request = require('supertest');
-const app     = require('../src/app');
-const prisma  = require('../src/lib/prisma');
+const app     = require('../app');
+const prisma  = require('../lib/prisma');
 
 beforeAll(async () => {
   await prisma.$executeRawUnsafe('DELETE FROM "AuditLog"');
