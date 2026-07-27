@@ -165,6 +165,7 @@ jobs:
           terraform apply -auto-approve \
             -var="image_uri=${{ needs.build.outputs.image_uri }}" \
             -var="domain_name=${{ secrets.DOMAIN_NAME }}" \
+            -var="parent_zone_name=${{ secrets.PARENT_ZONE_NAME }}" \
             -var="smtp_user=${{ secrets.SMTP_USER }}" \
             -var="budget_alert_email=${{ secrets.BUDGET_ALERT_EMAIL }}"
         env:
