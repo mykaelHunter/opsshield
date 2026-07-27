@@ -17,6 +17,15 @@ budget_alert_email = "team@opsshield.io"
 github_org  = "your-org"   # GitHub org/user that owns this repo
 github_repo = "opsshield"  # repo name only, no org prefix
 
+# Numeric IDs required by GitHub's immutable OIDC subject claim format
+# (repo:OWNER@OWNER_ID/REPO@REPO_ID:ref:refs/heads/BRANCH). Find via:
+#   gh api users/<owner> --jq .id        (or orgs/<owner> for an org)
+#   gh api repos/<owner>/<repo> --jq .id
+# or read the real values straight out of a CloudTrail
+# AssumeRoleWithWebIdentity event's sub claim if you're not sure.
+github_owner_id = "6595875"
+github_repo_id  = "1294943805"
+
 # image_uri is intentionally left out here — CI/CD passes it explicitly
 # on every apply: terraform apply -var="image_uri=<ecr-uri>:<git-sha>"
 
