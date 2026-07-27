@@ -85,3 +85,13 @@ variable "github_repo" {
   description = "Repo name only, no org prefix"
 }
 
+variable "github_owner_id" {
+  type        = string
+  description = "Numeric GitHub owner ID - required for the immutable OIDC subject claim format. See infra/modules/github_oidc/main.tf for how to find it."
+}
+
+variable "github_repo_id" {
+  type        = string
+  description = "Numeric GitHub repository ID - required for the immutable OIDC subject claim format."
+}
+

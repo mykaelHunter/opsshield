@@ -8,6 +8,16 @@ variable "github_repo" {
   description = "Repo name only, no org prefix, e.g. \"opsshield\""
 }
 
+variable "github_owner_id" {
+  type        = string
+  description = "Numeric GitHub owner (org/user) ID. Required because GitHub's sub claim now uses the immutable format `repo:OWNER@OWNER_ID/REPO@REPO_ID:ref:refs/heads/BRANCH` rather than names alone — find it via `gh api users/<owner>` or `gh api orgs/<owner>` (the `id` field), or from a CloudTrail AssumeRoleWithWebIdentity event's real `sub` claim."
+}
+
+variable "github_repo_id" {
+  type        = string
+  description = "Numeric GitHub repository ID — same immutable-claim reasoning as github_owner_id. Find via `gh api repos/<owner>/<repo>` (the `id` field)."
+}
+
 variable "allowed_branches" {
   type        = list(string)
   default     = ["main"]
@@ -57,9 +67,15 @@ resource "aws_iam_role" "deploy" {
           "token.actions.githubusercontent.com:aud" = "sts.amazonaws.com"
         }
         StringLike = {
+          # Immutable subject format (GitHub, opted in / repos created after
+          # 2026-07-15): repo:OWNER@OWNER_ID/REPO@REPO_ID:ref:refs/heads/BRANCH
+          # Confirmed against this repo's actual CloudTrail sub claim — do
+          # not revert to the name-only "repo:org/repo:ref:..." form, it
+          # will silently stop matching and every AssumeRoleWithWebIdentity
+          # call will fail with a generic "Not authorized" error.
           "token.actions.githubusercontent.com:sub" = [
             for b in var.allowed_branches :
-            "repo:${var.github_org}/${var.github_repo}:ref:refs/heads/${b}"
+            "repo:${var.github_org}@${var.github_owner_id}/${var.github_repo}@${var.github_repo_id}:ref:refs/heads/${b}"
           ]
         }
       }
