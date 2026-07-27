@@ -2,6 +2,25 @@ output "alb_dns_name" {
   value = module.alb.dns_name
 }
 
+output "frontend_url" {
+  value = module.frontend.frontend_url
+}
+
+output "frontend_bucket_name" {
+  description = "Deploy target for CI — sync built assets here"
+  value       = module.frontend.bucket_name
+}
+
+output "frontend_distribution_id" {
+  description = "Needed by CI to invalidate the CloudFront cache after each deploy"
+  value       = module.frontend.distribution_id
+}
+
+output "ecr_repository_url" {
+  description = "Push images here, then pass <this>:<tag> as image_uri on future applies"
+  value       = module.ecr.repository_url
+}
+
 output "app_url" {
   value = "https://${var.domain_name}"
 }

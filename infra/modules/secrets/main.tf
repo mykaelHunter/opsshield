@@ -2,6 +2,12 @@ variable "name" {
   type = string
 }
 
+variable "recovery_window_in_days" {
+  type    = number
+  default = 0
+  description = "0 = delete immediately, no AWS recovery window. Set to 7-30 for a real production environment you don't expect to destroy/recreate often — the tradeoff is that recreating a secret with the same name during that window (e.g. after a `terraform destroy` while iterating) fails with InvalidRequestException until the window elapses or you force-delete it manually via `aws secretsmanager delete-secret --force-delete-without-recovery`."
+}
+
 variable "database_url" {
   type      = string
   sensitive = true
@@ -44,6 +50,7 @@ resource "random_bytes" "jwt_refresh_secret" {
 
 resource "aws_secretsmanager_secret" "database_url" {
   name = "${var.name}/database-url"
+  recovery_window_in_days = var.recovery_window_in_days
   tags = var.tags
 }
 
@@ -54,6 +61,7 @@ resource "aws_secretsmanager_secret_version" "database_url" {
 
 resource "aws_secretsmanager_secret" "jwt_secret" {
   name = "${var.name}/jwt-secret"
+  recovery_window_in_days = var.recovery_window_in_days
   tags = var.tags
 }
 
@@ -64,6 +72,7 @@ resource "aws_secretsmanager_secret_version" "jwt_secret" {
 
 resource "aws_secretsmanager_secret" "jwt_refresh_secret" {
   name = "${var.name}/jwt-refresh-secret"
+  recovery_window_in_days = var.recovery_window_in_days
   tags = var.tags
 }
 
@@ -74,6 +83,7 @@ resource "aws_secretsmanager_secret_version" "jwt_refresh_secret" {
 
 resource "aws_secretsmanager_secret" "paystack_secret_key" {
   name = "${var.name}/paystack-secret-key"
+  recovery_window_in_days = var.recovery_window_in_days
   tags = var.tags
 }
 
@@ -84,6 +94,7 @@ resource "aws_secretsmanager_secret_version" "paystack_secret_key" {
 
 resource "aws_secretsmanager_secret" "smtp_pass" {
   name = "${var.name}/smtp-pass"
+  recovery_window_in_days = var.recovery_window_in_days
   tags = var.tags
 }
 

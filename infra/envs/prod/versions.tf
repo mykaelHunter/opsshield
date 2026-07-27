@@ -37,3 +37,20 @@ provider "aws" {
     }
   }
 }
+
+# CloudFront (module.frontend) requires its ACM certificate in us-east-1
+# specifically, regardless of var.aws_region — this is an AWS-wide
+# constraint, not an OpsShield-specific choice. Every other resource in
+# this stack uses the default (unaliased) provider above.
+provider "aws" {
+  alias  = "us_east_1"
+  region = "us-east-1"
+
+  default_tags {
+    tags = {
+      Project     = "opsshield"
+      Environment = "prod"
+      ManagedBy   = "terraform"
+    }
+  }
+}

@@ -13,6 +13,24 @@ variable "domain_name" {
   description = "e.g. opsshield.io"
 }
 
+variable "parent_zone_name" {
+  type        = string
+  default     = null
+  description = "Set when domain_name is a subdomain of a zone already hosted in this same AWS account (e.g. domain_name = \"opsshield.terra-hunter.com\", parent_zone_name = \"terra-hunter.com\"). Leave null if the parent zone is at an external registrar or a different account."
+}
+
+variable "frontend_subdomain" {
+  type        = string
+  default     = "app"
+  description = "The frontend is served at <this>.<domain_name>, e.g. app.opsshield.terra-hunter.com"
+}
+
+variable "secrets_recovery_window_in_days" {
+  type        = number
+  default     = 0
+  description = "0 = secrets delete immediately on destroy, no AWS recovery window (convenient while iterating, e.g. this project's frequent destroy/recreate cycles). Set to 7-30 once this is a real environment you don't expect to tear down casually — see modules/secrets/variables for the tradeoff."
+}
+
 variable "image_uri" {
   type        = string
   description = "ECR image URI + tag — passed by CI/CD (e.g. -var=\"image_uri=...\") not hardcoded here"

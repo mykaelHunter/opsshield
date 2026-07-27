@@ -6,6 +6,24 @@ locals {
   }
 }
 
+module "frontend" {
+  source = "../../modules/frontend"
+  providers = {
+    aws           = aws
+    aws.us_east_1 = aws.us_east_1
+  }
+
+  name        = local.name
+  subdomain   = var.frontend_subdomain
+  domain_name = var.domain_name
+  # Reuses the zone dns_acm already created and already has delegation
+  # configured for (via parent_zone_name) — no new hosted zone, no new
+  # delegation step, since app.<domain_name> lives inside the same zone
+  # as <domain_name> itself.
+  zone_id = module.dns_acm.zone_id
+  tags    = local.tags
+}
+
 module "vpc" {
   source = "../../modules/vpc"
 
@@ -14,6 +32,18 @@ module "vpc" {
   public_subnet_cidrs   = ["10.20.0.0/24", "10.20.1.0/24"]
   private_subnet_cidrs  = ["10.20.10.0/24", "10.20.11.0/24"]
   tags                  = local.tags
+}
+
+# Named "opsshield" (not local.name/"opsshield-prod") deliberately — this
+# must exactly match the repo name ci.yml's docker build/push steps use
+# ("$ECR_REGISTRY/opsshield:$IMAGE_TAG"). One shared repo across
+# environments is standard for ECR; only image tags differ per deploy,
+# not the repository itself.
+module "ecr" {
+  source = "../../modules/ecr"
+
+  name = "opsshield"
+  tags = local.tags
 }
 
 # ── Bootstrap ordering note ────────────────────────────────────────────
@@ -28,10 +58,11 @@ module "vpc" {
 module "dns_acm" {
   source = "../../modules/dns_acm"
 
-  domain_name  = var.domain_name
-  alb_dns_name = module.alb.dns_name
-  alb_zone_id  = module.alb.zone_id
-  tags         = local.tags
+  domain_name      = var.domain_name
+  parent_zone_name = var.parent_zone_name
+  alb_dns_name     = module.alb.dns_name
+  alb_zone_id      = module.alb.zone_id
+  tags             = local.tags
 }
 
 module "alb" {
@@ -42,6 +73,14 @@ module "alb" {
   public_subnet_ids = module.vpc.public_subnet_ids
   certificate_arn   = module.dns_acm.certificate_arn
   tags              = local.tags
+
+  # Explicit module-level dependency, not just the attribute references
+  # above: the IGW and its public route table association have no
+  # attribute in common with public_subnet_ids, so Terraform's graph
+  # doesn't otherwise know to wait for the route to actually exist before
+  # creating the ALB — AWS validates that route at ALB-creation time and
+  # fails with "VPC has no internet gateway" if it loses the race.
+  depends_on = [module.vpc]
 }
 
 module "rds" {
@@ -58,10 +97,11 @@ module "rds" {
 module "secrets" {
   source = "../../modules/secrets"
 
-  name                = local.name
-  database_url        = module.rds.database_url
-  paystack_secret_key = var.paystack_secret_key
-  smtp_pass           = var.smtp_pass
+  name                     = local.name
+  database_url             = module.rds.database_url
+  paystack_secret_key      = var.paystack_secret_key
+  smtp_pass                = var.smtp_pass
+  recovery_window_in_days  = var.secrets_recovery_window_in_days
   tags                = local.tags
 }
 
@@ -90,8 +130,8 @@ module "ecs" {
   non_secret_env = {
     NODE_ENV         = "production"
     PORT             = "3000"
-    FRONTEND_URL     = "https://${var.domain_name}"
-    ALLOWED_ORIGINS  = "https://${var.domain_name}"
+    FRONTEND_URL     = module.frontend.frontend_url
+    ALLOWED_ORIGINS  = module.frontend.frontend_url
     SMTP_HOST        = var.smtp_host
     SMTP_PORT        = var.smtp_port
     SMTP_USER        = var.smtp_user

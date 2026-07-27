@@ -7,6 +7,7 @@ infra/
 ├── modules/
 │   ├── vpc/          VPC, public/private subnets, NAT, VPC Flow Logs
 │   ├── dns_acm/      Route53 hosted zone, ACM cert (DNS validated)
+│   ├── ecr/          Container repository, scan-on-push, lifecycle policy
 │   ├── rds/          Postgres, private subnet only, 7-day backups, Multi-AZ
 │   ├── secrets/      Secrets Manager — one secret per credential
 │   ├── alb/          ALB, HTTPS-only listener, HTTP→HTTPS redirect, access logs
@@ -73,12 +74,35 @@ export TF_VAR_smtp_pass="..."
 terraform init
 ```
 
-**First apply only** — `dns_acm` and `alb` reference each other's outputs
-(cert → ALB, ALB DNS name → Route53 alias record). Resolve the ordering once:
+**First apply only** — three things need resolving in order, since each
+depends on something that doesn't exist yet:
+
+1. `dns_acm` and `alb` reference each other's outputs (cert → ALB, ALB DNS
+   name → Route53 alias record).
+2. The `ecs` module needs a real `image_uri`, but you can't push an image to
+   a repository that doesn't exist yet — and the `ecr` module is what
+   creates that repository.
 
 ```bash
-terraform apply -target=module.dns_acm.aws_acm_certificate.this -target=module.alb
-terraform apply
+# Step 1: create the ECR repo (and resolve the dns_acm/alb ordering) —
+# use a placeholder image_uri here, it's only needed to satisfy the ecs
+# module's variable type; ecs itself isn't targeted in this step.
+terraform apply \
+  -target=module.ecr \
+  -target=module.dns_acm.aws_acm_certificate.this \
+  -target=module.alb \
+  -var="image_uri=placeholder"
+
+# Step 2: build and push a real image now that the repo exists
+terraform output ecr_repository_url
+aws ecr get-login-password --region eu-west-1 | \
+  docker login --username AWS --password-stdin $(terraform output -raw ecr_repository_url | cut -d/ -f1)
+docker build -t opsshield .
+docker tag opsshield:latest "$(terraform output -raw ecr_repository_url):latest"
+docker push "$(terraform output -raw ecr_repository_url):latest"
+
+# Step 3: apply everything else with the real image
+terraform apply -var="image_uri=$(terraform output -raw ecr_repository_url):latest"
 ```
 
 Every apply after that is a normal `terraform apply` — no more targeting needed,
@@ -92,6 +116,11 @@ terraform apply -var="image_uri=<account>.dkr.ecr.eu-west-1.amazonaws.com/opsshi
 
 ## Design decisions worth knowing before you touch this
 
+- **ECR tag mutability is `MUTABLE`, not `IMMUTABLE`** — because `ci.yml`
+  currently re-pushes the `:latest` tag on every build, which `IMMUTABLE`
+  would reject on the second push. `IMMUTABLE` is the safer choice (a
+  compromised CI run can't silently overwrite an existing tag) but requires
+  CI to stop pushing `:latest` and rely solely on the git-SHA tag first.
 - **No secret values ever appear in a task definition** — the `ecs` module's
   container definition only holds Secrets Manager ARNs (`secrets` block, not
   `environment`). This satisfies the README's "no env vars in the task
