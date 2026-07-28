@@ -197,6 +197,39 @@ jobs:
             -var="smtp_user=${{ secrets.SMTP_USER }}" \
             -var="budget_alert_email=${{ secrets.BUDGET_ALERT_EMAIL }}"
 
+      - name: Run database migrations
+        run: |
+          TASK_DEF_ARN=$(terraform output -raw ecs_task_definition_arn)
+          SUBNET_IDS=$(terraform output -json ecs_private_subnet_ids | jq -r 'join(",")')
+          SECURITY_GROUP=$(terraform output -raw ecs_service_security_group_id)
+
+          TASK_ARN=$(aws ecs run-task \
+            --cluster $(terraform output -raw ecs_cluster_name) \
+            --task-definition "$TASK_DEF_ARN" \
+            --launch-type FARGATE \
+            --network-configuration "awsvpcConfiguration={subnets=[$SUBNET_IDS],securityGroups=[$SECURITY_GROUP],assignPublicIp=DISABLED}" \
+            --overrides '{"containerOverrides":[{"name":"opsshield-app","command":["npx","prisma","migrate","deploy"]}]}' \
+            --region ${{ secrets.AWS_REGION }} \
+            --query 'tasks[0].taskArn' --output text)
+
+          echo "Migration task: $TASK_ARN"
+
+          aws ecs wait tasks-stopped \
+            --cluster $(terraform output -raw ecs_cluster_name) \
+            --tasks "$TASK_ARN" \
+            --region ${{ secrets.AWS_REGION }}
+
+          EXIT_CODE=$(aws ecs describe-tasks \
+            --cluster $(terraform output -raw ecs_cluster_name) \
+            --tasks "$TASK_ARN" \
+            --region ${{ secrets.AWS_REGION }} \
+            --query 'tasks[0].containers[0].exitCode' --output text)
+
+          if [ "$EXIT_CODE" != "0" ]; then
+            echo "::error::Migration task exited with code $EXIT_CODE"
+            exit 1
+          fi
+
       - name: Wait for service stability
         run: |
           aws ecs wait services-stable \

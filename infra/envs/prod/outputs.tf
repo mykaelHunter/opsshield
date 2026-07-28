@@ -38,6 +38,18 @@ output "ecs_service_name" {
   value = module.ecs.service_name
 }
 
+output "ecs_task_definition_arn" {
+  value = module.ecs.task_definition_arn
+}
+
+output "ecs_private_subnet_ids" {
+  value = module.vpc.private_subnet_ids
+}
+
+output "ecs_service_security_group_id" {
+  value = module.ecs.task_security_group_id
+}
+
 output "rds_endpoint" {
   value = module.rds.endpoint
 }
