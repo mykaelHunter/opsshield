@@ -2,7 +2,7 @@ import { useEffect, useState, useCallback } from 'react';
 import { useAuth } from '../context/AuthContext';
 import { api } from '../api';
 
-const PLANS = ['FREE', 'PRO', 'ENTERPRISE'];
+const PLANS = ['STARTER', 'PRO'];
 
 export default function Billing() {
   const { activeOrg } = useAuth();
@@ -15,7 +15,7 @@ export default function Billing() {
     setLoading(true);
     try {
       const data = await api.billingHistory(activeOrg.id);
-      setHistory(data.history || data);
+      setHistory(Array.isArray(data.billing) ? data.billing : []);
     } catch (err) {
       setError(err.body?.error || 'Failed to load billing history');
     } finally {
@@ -31,8 +31,8 @@ export default function Billing() {
       const result = await api.initiateBilling(activeOrg.id, plan);
       // Paystack returns a checkout URL — hand off to it directly rather
       // than trying to embed payment collection in this app.
-      if (result.authorizationUrl) {
-        window.location.href = result.authorizationUrl;
+      if (result.url) {
+        window.location.href = result.url;
       }
     } catch (err) {
       setError(err.body?.error || 'Failed to start checkout');
