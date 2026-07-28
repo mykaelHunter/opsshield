@@ -130,6 +130,9 @@ jobs:
           docker push $ECR_REGISTRY/opsshield:latest
           echo "image_uri=$ECR_REGISTRY/opsshield:$IMAGE_TAG" >> "$GITHUB_OUTPUT"
 
+      - name: Debug output file
+        run: cat "$GITHUB_OUTPUT"
+
       - name: Container vulnerability scan (Trivy)
         uses: aquasecurity/trivy-action@master
         with:
@@ -153,6 +156,11 @@ jobs:
         working-directory: infra/envs/prod
     steps:
       - uses: actions/checkout@v4
+
+      - name: Debug image_uri
+        run: |
+          echo "Raw needs.build.outputs.image_uri: '${{ needs.build.outputs.image_uri }}'"
+          echo "Build job result: ${{ needs.build.result }}"
 
       - name: Configure AWS credentials
         uses: aws-actions/configure-aws-credentials@v4
