@@ -119,6 +119,7 @@ jobs:
         uses: aws-actions/amazon-ecr-login@v2
 
       - name: Build and push image
+        id: build-image
         env:
           ECR_REGISTRY: ${{ steps.login-ecr.outputs.registry }}
           IMAGE_TAG: ${{ github.sha }}
@@ -127,6 +128,7 @@ jobs:
           docker build -t $ECR_REGISTRY/opsshield:latest .
           docker push $ECR_REGISTRY/opsshield:$IMAGE_TAG
           docker push $ECR_REGISTRY/opsshield:latest
+          echo "image_uri=$ECR_REGISTRY/opsshield:$IMAGE_TAG" >> "$GITHUB_OUTPUT"
 
       - name: Container vulnerability scan (Trivy)
         uses: aquasecurity/trivy-action@master
@@ -136,7 +138,7 @@ jobs:
           exit-code: 1
 
     outputs:
-      image_uri: ${{ steps.login-ecr.outputs.registry }}/opsshield:${{ github.sha }}
+      image_uri: ${{ steps.build-image.outputs.image_uri }}
 
   deploy:
     name: Deploy (Terraform)
@@ -165,6 +167,13 @@ jobs:
 
       - name: Terraform init
         run: terraform init
+
+      - name: Validate image_uri
+        run: |
+          if [ -z "${{ needs.build.outputs.image_uri }}" ]; then
+            echo "::error::image_uri output from build job is empty — refusing to deploy"
+            exit 1
+          fi
 
       - name: Terraform apply
         run: |
