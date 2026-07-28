@@ -128,10 +128,7 @@ jobs:
           docker build -t $ECR_REGISTRY/opsshield:latest .
           docker push $ECR_REGISTRY/opsshield:$IMAGE_TAG
           docker push $ECR_REGISTRY/opsshield:latest
-          echo "image_uri=$ECR_REGISTRY/opsshield:$IMAGE_TAG" >> "$GITHUB_OUTPUT"
-
-      - name: Debug output file
-        run: cat "$GITHUB_OUTPUT"
+          echo "image_tag=$IMAGE_TAG" >> "$GITHUB_OUTPUT"
 
       - name: Container vulnerability scan (Trivy)
         uses: aquasecurity/trivy-action@master
@@ -141,7 +138,7 @@ jobs:
           exit-code: 1
 
     outputs:
-      image_uri: ${{ steps.build-image.outputs.image_uri }}
+      image_tag: ${{ steps.build-image.outputs.image_tag }}
 
   deploy:
     name: Deploy (Terraform)
@@ -157,16 +154,15 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Debug image_uri
-        run: |
-          echo "Raw needs.build.outputs.image_uri: '${{ needs.build.outputs.image_uri }}'"
-          echo "Build job result: ${{ needs.build.result }}"
-
       - name: Configure AWS credentials
         uses: aws-actions/configure-aws-credentials@v4
         with:
           role-to-assume: ${{ secrets.AWS_DEPLOY_ROLE_ARN }}
           aws-region: ${{ secrets.AWS_REGION }}
+
+      - name: Login to ECR
+        id: login-ecr
+        uses: aws-actions/amazon-ecr-login@v2
 
       - name: Setup Terraform
         uses: hashicorp/setup-terraform@v3
@@ -176,28 +172,30 @@ jobs:
       - name: Terraform init
         run: terraform init
 
-      - name: Validate image_uri
+      - name: Validate image_tag
         run: |
-          if [ -z "${{ needs.build.outputs.image_uri }}" ]; then
-            echo "::error::image_uri output from build job is empty — refusing to deploy"
+          if [ -z "${{ needs.build.outputs.image_tag }}" ]; then
+            echo "::error::image_tag output from build job is empty — refusing to deploy"
             exit 1
           fi
 
       - name: Terraform apply
-        run: |
-          terraform apply -auto-approve -input=false \
-            -var="image_uri=${{ needs.build.outputs.image_uri }}" \
-            -var="domain_name=${{ secrets.DOMAIN_NAME }}" \
-            -var="parent_zone_name=${{ secrets.PARENT_ZONE_NAME }}" \
-            -var="smtp_user=${{ secrets.SMTP_USER }}" \
-            -var="budget_alert_email=${{ secrets.BUDGET_ALERT_EMAIL }}"
         env:
+          ECR_REGISTRY: ${{ steps.login-ecr.outputs.registry }}
+          IMAGE_TAG: ${{ needs.build.outputs.image_tag }}
           # Values injected via TF_VAR_* rather than committed to any
           # .tfvars file in the repo — see infra/README.md and
           # infra/envs/prod/variables.tf for why these specifically
           # are treated as secrets rather than plain -var flags above.
           TF_VAR_paystack_secret_key: ${{ secrets.PAYSTACK_SECRET_KEY }}
           TF_VAR_smtp_pass: ${{ secrets.SMTP_PASS }}
+        run: |
+          terraform apply -auto-approve -input=false \
+            -var="image_uri=$ECR_REGISTRY/opsshield:$IMAGE_TAG" \
+            -var="domain_name=${{ secrets.DOMAIN_NAME }}" \
+            -var="parent_zone_name=${{ secrets.PARENT_ZONE_NAME }}" \
+            -var="smtp_user=${{ secrets.SMTP_USER }}" \
+            -var="budget_alert_email=${{ secrets.BUDGET_ALERT_EMAIL }}"
 
       - name: Wait for service stability
         run: |
