@@ -20,11 +20,21 @@ echo ""
 echo "Deleting any previous db snapshots"
 echo ""
 aws rds delete-db-snapshot --db-snapshot-identifier opsshield-db-final-snapshot
+echo "Done"
 echo ""
 
 echo "Removing delete protection from the db"
 echo ""
 aws rds modify-db-instance --db-instance-identifier opsshield-prod-db --no-deletion-protection --apply-immediately
+echo "Done"
+echo ""
+
+echo "Deleting ecr images"
+echo ""
+aws ecr batch-delete-image \
+  --repository-name opsshield \
+  --image-ids "$(aws ecr list-images --repository-name opsshield --query 'imageIds[*]' --output json)"
+echo "Done"
 echo ""
 
 echo "Emptying s3 buckets for frontend and alb logs"
