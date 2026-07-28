@@ -207,7 +207,7 @@ resource "aws_ecs_task_definition" "this" {
       }
 
       healthCheck = {
-        command     = ["CMD-SHELL", "curl -f http://localhost:${var.container_port}/health || exit 1"]
+        command     = ["CMD-SHELL", "node -e \"require('http').get('http://localhost:${var.container_port}/health', r => process.exit(r.statusCode === 200 ? 0 : 1)).on('error', () => process.exit(1))\""]
         interval    = 30
         timeout     = 5
         retries     = 3
@@ -292,4 +292,8 @@ output "service_name" {
 
 output "task_security_group_id" {
   value = aws_security_group.ecs_task.id
+}
+
+output "task_definition_arn" {
+  value = aws_ecs_task_definition.this.arn
 }
