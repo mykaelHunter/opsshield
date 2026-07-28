@@ -208,7 +208,7 @@ jobs:
             --task-definition "$TASK_DEF_ARN" \
             --launch-type FARGATE \
             --network-configuration "awsvpcConfiguration={subnets=[$SUBNET_IDS],securityGroups=[$SECURITY_GROUP],assignPublicIp=DISABLED}" \
-            --overrides '{"containerOverrides":[{"name":"opsshield-app","command":["npx","prisma","migrate","deploy"]}]}' \
+            --overrides '{"containerOverrides":[{"name":"opsshield-app","command":["node","node_modules/prisma/build/index.js","migrate","deploy"]}]}' \
             --region ${{ secrets.AWS_REGION }} \
             --query 'tasks[0].taskArn' --output text)
 
