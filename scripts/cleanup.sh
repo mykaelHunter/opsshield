@@ -2,6 +2,8 @@
 
 set -euo pipefail
 
+echo "Manually empty and delete the alb log bucket before running the script"
+# This is because the terraform destroy process creates logs in the bucket
 echo "Make sure you have edited the variables before running this script"
 echo "Do not run the script unless you are absolutely sure of what you are doing"
 echo ""
@@ -49,7 +51,6 @@ echo ""
 echo "Buckets cleaned"
 
 echo "Destroying infra"
-echo "Manually empty the alb log bucket 5s after terraform starts destroying"
 echo ""
 cd ..
 cd infra/envs/prod
@@ -86,6 +87,8 @@ echo "You have 30s to decide"
 sleep 30s
 
 aws logs delete-log-group --log-group-name "/opsshield/opsshield-prod/vpc-flow-logs" --region ${AWS_REGION}
+aws logs delete-log-group --log-group-name "/aws/ecs/containerinsights/opsshield-prod-cluster/performance" --region ${AWS_REGION}
+aws logs delete-log-group --log-group-name "/aws/rds/instance/opsshield-prod-db/postgresql" --region ${AWS_REGION}
 echo ""
 echo "Deletion of logs complete"
 
