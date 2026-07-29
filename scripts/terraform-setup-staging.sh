@@ -14,7 +14,7 @@ export TF_VAR_paystack_secret_key="sk_test_....."
 export TF_VAR_smtp_pass="<Any hex string>" 
 
 echo "Creating bucket for state locking"
-aws s3 mb s3://opsshield-terraform-state-prod --region eu-west-1
+aws s3 mb s3://opsshield-terraform-state-prod --region ${AWS_REGION}
 
 # Enable versioning (so you can recover from bad state)
 aws s3api put-bucket-versioning \
@@ -36,7 +36,7 @@ echo ""
 cd ..
 cd infra/envs/prod
 terraform init
-terraform apply -target=module.ecr -var="image_uri=${ACCOUNT_ID}.dkr.ecr.${AWS_REGION}.amazonaws.com/opsshield:latest"
+terraform apply -target=module.ecr -var="image_uri=${ACCOUNT_ID}.dkr.ecr.${AWS_REGION}.amazonaws.com/opsshield:latest" -auto-approve
 echo "done"
 
 cd ..
