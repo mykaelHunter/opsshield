@@ -37,13 +37,28 @@ TASK_DEF=$(terraform output -raw ecs_task_definition_arn)
 SUBNETS=$(terraform output -json ecs_private_subnet_ids | jq -r 'join(",")')
 SG=$(terraform output -raw ecs_service_security_group_id)
 
-TASK_ARN=$(aws ecs run-task --cluster "$CLUSTER" --task-definition "$TASK_DEF" --launch-type FARGATE --network-configuration "awsvpcConfiguration={subnets=[$SUBNETS],securityGroups=[$SG],assignPublicIp=DISABLED}" --overrides '{"containerOverrides":[{"name":"opsshield-app","command":["node","prisma/seed.js"]}]}' --region ${AWS_REGION} --query 'tasks[0].taskArn' --output text)
+TASK_ARN=$(aws ecs run-task --cluster "$CLUSTER" --task-definition "$TASK_DEF" --launch-type FARGATE --network-configuration "awsvpcConfiguration={subnets=[$SUBNETS],securityGroups=[$SG],assignPublicIp=DISABLED}" --overrides '{"containerOverrides":[{"name":"opsshield-app","command":["node","node_modules/prisma/build/index.js","migrate","deploy"]}]}' --region ${AWS_REGION} --query 'tasks[0].taskArn' --output text)
 
 echo "Migration task: $TASK_ARN"
 
 aws ecs wait tasks-stopped --cluster "$CLUSTER" --tasks "$TASK_ARN" --region ${AWS_REGION}
 
-aws ecs describe-tasks --cluster "$CLUSTER" --tasks "$TASK_ARN" --region ${AWS_REGION} --query 'tasks[0].containers[0].{exitCode:exitCode,reason:reason}'
+MIGRATE_EXIT=$(aws ecs describe-tasks --cluster "$CLUSTER" --tasks "$TASK_ARN" --region ${AWS_REGION} --query 'tasks[0].containers[0].exitCode' --output text)
+
+echo "Migration exit code: $MIGRATE_EXIT"
+
+if [ "$MIGRATE_EXIT" != "0" ]; then
+  echo "Migration failed — not running seed."
+  exit 1
+fi
+
+SEED_ARN=$(aws ecs run-task --cluster "$CLUSTER" --task-definition "$TASK_DEF" --launch-type FARGATE --network-configuration "awsvpcConfiguration={subnets=[$SUBNETS],securityGroups=[$SG],assignPublicIp=DISABLED}" --overrides '{"containerOverrides":[{"name":"opsshield-app","command":["node","prisma/seed.js"]}]}' --region ${AWS_REGION} --query 'tasks[0].taskArn' --output text)
+
+echo "Seed task: $SEED_ARN"
+
+aws ecs wait tasks-stopped --cluster "$CLUSTER" --tasks "$SEED_ARN" --region eu-west-1
+
+aws ecs describe-tasks --cluster "$CLUSTER" --tasks "$SEED_ARN" --region ${AWS_REGION} --query 'tasks[0].containers[0].{exitCode:exitCode,reason:reason}'
 
 echo ""
 echo "Migrations complete"

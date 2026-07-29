@@ -20,6 +20,54 @@ Before running any script, edit its placeholder variables in place:
 
 ---
 
+## Before you apply anything to prod
+
+Earned the hard way: a `terraform apply` against `infra/envs/prod` that
+recreated the `database-url` secret without writing a paired version left
+the secret in a state where it existed but had no `AWSCURRENT` version —
+every subsequent ECS task placement failed at
+`ResourceInitializationError: unable to pull secrets` until it was caught
+and fixed with `terraform apply -replace=...`. Check these two things
+*before* any apply that touches `module.secrets` or `module.ecs` in prod:
+
+1. **The two genuinely user-supplied secrets are exported in this shell,
+   every time.** `database_url` is not one of these — it's built entirely
+   inside `module.rds` from a Terraform-generated `random_password` plus
+   the RDS endpoint (`infra/modules/rds/main.tf`), so there's nothing to
+   export or know for it on a fresh install. JWT secrets are similarly
+   self-generated inside `module.secrets`. Only these two come from you:
+   ```bash
+   echo "${TF_VAR_paystack_secret_key:?missing}" > /dev/null
+   echo "${TF_VAR_smtp_pass:?missing}" > /dev/null
+   ```
+   If either prints "missing" instead of erroring silently — stop and
+   export it before proceeding. An apply that's missing one of these
+   against prod is a stop-and-check moment, not something to push through
+   on a prompt or a stale default.
+
+2. **After any apply that touches `module.secrets`, confirm every secret
+   still has a current version before forcing an ECS deployment** — this
+   catches a broken secret before it takes prod down, rather than after:
+   ```bash
+   for s in database-url jwt-secret jwt-refresh-secret paystack-secret-key smtp-pass; do
+     echo -n "${s}: "
+     aws secretsmanager list-secret-version-ids --secret-id "opsshield-prod/${s}" --region eu-west-1 \
+       --query 'Versions[?contains(VersionStages, `AWSCURRENT`)]' --output text
+   done
+   ```
+   Any blank line means that secret has no `AWSCURRENT` version and any
+   deployment that references it will fail the same way — fix it
+   (`terraform apply -replace=module.secrets.aws_secretsmanager_secret_version.<name>`)
+   before forcing a new ECS deployment.
+
+Also worth setting `secrets_recovery_window_in_days` to `7` (not `0`) for
+prod specifically — it doesn't prevent a bad apply from breaking a
+version, but it removes the "force-delete + instantly recreate under the
+same name" race that's the most likely way a secret ends up in this state
+in the first place. Staging can stay at `0` for fast iteration.
+
+---
+
 ## 1. First-time provisioning — `terraform-setup.sh`
 
 ```bash
@@ -168,6 +216,7 @@ listed there. Any future environment that picks its own subnet range
 | CI blocked on Trivy/Semgrep | Check severity thresholds in `.github/workflows/ci.yml`; do not lower them to unblock without security sign-off |
 | `staging` apply fails: `couldn't find resource ... data.aws_ecr_repository.opsshield` | Prod's `module.ecr` hasn't been applied yet (or was destroyed), or staging's region doesn't match prod's — see "Ordering dependency" under §2a |
 | `InvalidSubnet.Range` on `module.vpc.aws_subnet.*` | The env's `cidr_block` wasn't overridden to contain its subnet CIDRs — see "VPC cidr_block" note under §2a |
+| ECS task fails: `ResourceInitializationError: unable to pull secrets ... ResourceNotFoundException ... AWSCURRENT` | The referenced secret has no current version — check with the loop under "Before you apply anything to prod", fix with `terraform apply -replace=module.secrets.aws_secretsmanager_secret_version.<name>`, then `--force-new-deployment` |
 
 ---
 
