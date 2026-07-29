@@ -9,6 +9,7 @@ echo "Do not run the script unless you are absolutely sure of what you are doing
 echo ""
 sleep 30s
 
+ENV=<environment>
 AWS_REGION=<your-region>
 FRONTEND_BUCKET=<frontend_bucket_name>
 STATE_STORE=<your_s3_state_bucket>
@@ -20,13 +21,14 @@ echo ""
 
 echo "Deleting any previous db snapshots"
 echo ""
-aws rds delete-db-snapshot --db-snapshot-identifier opsshield-prod-db-final-snapshot
+
+aws rds delete-db-snapshot --db-snapshot-identifier opsshield-${ENV}-db-final-snapshot
 echo "Done"
 echo ""
 
 echo "Removing delete protection from the db"
 echo ""
-aws rds modify-db-instance --db-instance-identifier opsshield-prod-db --no-deletion-protection --apply-immediately
+aws rds modify-db-instance --db-instance-identifier opsshield-${ENV}-db --no-deletion-protection --apply-immediately
 echo "Done"
 echo ""
 
@@ -53,7 +55,7 @@ echo "Buckets cleaned"
 echo "Destroying infra"
 echo ""
 cd ..
-cd infra/envs/prod
+cd infra/envs/{ENV}
 terraform destroy -var="image_uri=$(terraform output -raw ecr_repository_url):latest" -auto-approve
 echo ""
 echo "Destruction complete"
@@ -86,9 +88,17 @@ echo "Deleting cloudwatch logs(optional)"
 echo "You have 30s to decide"
 sleep 30s
 
-aws logs delete-log-group --log-group-name "/opsshield/opsshield-prod/vpc-flow-logs" --region ${AWS_REGION}
-aws logs delete-log-group --log-group-name "/aws/ecs/containerinsights/opsshield-prod-cluster/performance" --region ${AWS_REGION}
-aws logs delete-log-group --log-group-name "/aws/rds/instance/opsshield-prod-db/postgresql" --region ${AWS_REGION}
+aws logs delete-log-group --log-group-name "/opsshield/opsshield-${ENV}/vpc-flow-logs" --region ${AWS_REGION}
+aws logs delete-log-group --log-group-name "/aws/ecs/containerinsights/opsshield-${ENV}-cluster/performance" --region ${AWS_REGION}
+aws logs delete-log-group --log-group-name "/aws/rds/instance/opsshield-${ENV}-db/postgresql" --region ${AWS_REGION}
 echo ""
 echo "Deletion of logs complete"
 
+if [[ ${ENV} == staging ]]; then
+	cd ..
+	cd ..
+	cd ..
+	cd infra/envs/prod
+	terraform destroy -var="image_uri=$(terraform output -raw ecr_repository_url):latest" -auto-approve
+else
+	exit 0
