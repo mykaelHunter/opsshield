@@ -62,6 +62,19 @@ echo ""
 echo "Destruction complete"
 echo ""
 
+echo "Deleting ecr repository"
+if [[ ${ENV} == "staging" ]]; then
+        cd ..
+        cd ..
+        cd ..
+        cd infra/envs/prod
+        terraform destroy -var="image_uri=$(terraform output -raw ecr_repository_url):latest" -auto-approve
+else
+        echo "This is production"
+        exit 0
+fi
+
+echo ""
 echo "Stop the script if terraform destroy failed"
 echo ""
 sleep 45s
@@ -95,11 +108,3 @@ aws logs delete-log-group --log-group-name "/aws/rds/instance/opsshield-${ENV}-d
 echo ""
 echo "Deletion of logs complete"
 
-if [[ ${ENV} == staging ]]; then
-	cd ..
-	cd ..
-	cd ..
-	cd infra/envs/prod
-	terraform destroy -var="image_uri=$(terraform output -raw ecr_repository_url):latest" -auto-approve
-else
-	exit 0
