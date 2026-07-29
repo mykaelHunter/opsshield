@@ -25,6 +25,8 @@ sleep 30s
 echo "Running database migrations"
 echo ""
 
+cd infra/envs/prod
+
 CLUSTER=$(terraform output -raw ecs_cluster_name)
 TASK_DEF=$(terraform output -raw ecs_task_definition_arn)
 SUBNETS=$(terraform output -json ecs_private_subnet_ids | jq -r 'join(",")')
