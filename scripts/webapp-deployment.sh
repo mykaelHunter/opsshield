@@ -27,6 +27,8 @@ echo ""
 
 cd infra/envs/prod
 
+terraform apply -target=module.ecr -target=module.dns_acm.aws_acm_certificate.this -target=module.alb -var="image_uri=${ACCOUNT_ID}.dkr.ecr.${AWS_REGION}.amazonaws.com/opsshield:latest"
+
 CLUSTER=$(terraform output -raw ecs_cluster_name)
 TASK_DEF=$(terraform output -raw ecs_task_definition_arn)
 SUBNETS=$(terraform output -json ecs_private_subnet_ids | jq -r 'join(",")')
