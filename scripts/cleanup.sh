@@ -19,7 +19,7 @@ echo ""
 
 echo "Deleting any previous db snapshots"
 echo ""
-aws rds delete-db-snapshot --db-snapshot-identifier opsshield-db-final-snapshot
+aws rds delete-db-snapshot --db-snapshot-identifier opsshield-prod-db-final-snapshot
 echo "Done"
 echo ""
 
@@ -37,21 +37,7 @@ aws ecr batch-delete-image \
 echo "Done"
 echo ""
 
-echo "Emptying s3 buckets for frontend and alb logs"
-
-aws s3api delete-objects \
-    --bucket ${ALB_BUCKET} \
-    --delete "$(aws s3api list-object-versions \
-    --bucket ${ALB_BUCKET} \
-    --output json \
-    --query '{Objects: Versions[].{Key:Key,VersionId:VersionId}}')"
-
-aws s3api delete-objects \
-    --bucket ${ALB_BUCKET} \
-    --delete "$(aws s3api list-object-versions \
-    --bucket ${ALB_BUCKET} \
-    --output json \
-    --query '{Objects: DeleteMarkers[].{Key:Key,VersionId:VersionId}}')"
+echo "Emptying s3 bucket for frontend"
 
 aws s3api delete-objects \
     --bucket ${FRONTEND_BUCKET} \
@@ -59,18 +45,12 @@ aws s3api delete-objects \
     --bucket ${FRONTEND_BUCKET} \
     --output json \
     --query '{Objects: Versions[].{Key:Key,VersionId:VersionId}}')"
-
-aws s3api delete-objects \
-    --bucket ${FRONTEND_BUCKET} \
-    --delete "$(aws s3api list-object-versions \
-    --bucket ${FRONTEND_BUCKET} \
-    --output json \
-    --query '{Objects: DeleteMarkers[].{Key:Key,VersionId:VersionId}}')"
 
 echo ""
 echo "Buckets cleaned"
 
 echo "Destroying infra"
+echo "Manually empty the alb log bucket 5s after terraform starts destroying"
 echo ""
 cd ..
 cd infra/envs/prod
@@ -78,6 +58,10 @@ terraform destroy -var="image_uri=$(terraform output -raw ecr_repository_url):la
 echo ""
 echo "Destruction complete"
 echo ""
+
+echo "Stop the script if terraform destroy failed"
+echo ""
+sleep 45s
 
 echo "Empty and delete s3 state bucket"
 aws s3api delete-objects \
