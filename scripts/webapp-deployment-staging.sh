@@ -61,4 +61,4 @@ echo ""
 echo "Pushing frontend artifact to s3"
 echo""
 
-aws s3 sync dist/ "s3://$(cd ../infra/envs/prod && terraform output -raw frontend_bucket_name)" --delete
+aws s3 sync dist/ "s3://$(cd ../infra/envs/staging && terraform output -raw frontend_bucket_name)" --delete
