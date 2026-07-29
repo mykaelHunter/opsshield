@@ -30,6 +30,17 @@ aws s3api put-bucket-encryption \
 echo "Bucket for state locking done"
 echo ""
 
+echo "Creating ecr repository"
+echo ""
+
+cd ..
+cd infra/envs/prod
+terraform init
+terraform apply -target=module.ecr -var="image_uri=${ACCOUNT_ID}.dkr.ecr.${AWS_REGION}.amazonaws.com/opsshield:latest"
+echo "done"
+
+cd ..
+cd ..
 cd ..
 
 cd infra/envs/staging

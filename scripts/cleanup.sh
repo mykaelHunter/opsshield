@@ -10,8 +10,9 @@ echo ""
 sleep 30s
 
 ENV=<environment>
+ACCOUNT_ID=<your-iam-account-id>
 AWS_REGION=<your-region>
-FRONTEND_BUCKET=<frontend_bucket_name>
+FRONTEND_BUCKET=opsshield-${ENV}-frontend-${ACCOUNT_ID}
 STATE_STORE=<your_s3_state_bucket>
 export TF_VAR_paystack_secret_key="sk_test_....."
 export TF_VAR_smtp_pass="<Any hex string>"
@@ -55,7 +56,7 @@ echo "Buckets cleaned"
 echo "Destroying infra"
 echo ""
 cd ..
-cd infra/envs/{ENV}
+cd infra/envs/${ENV}
 terraform destroy -var="image_uri=$(terraform output -raw ecr_repository_url):latest" -auto-approve
 echo ""
 echo "Destruction complete"
