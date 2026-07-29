@@ -30,6 +30,7 @@ echo ""
 cd infra/envs/prod
 
 terraform apply -target=module.ecs -var="image_uri=${ACCOUNT_ID}.dkr.ecr.${AWS_REGION}.amazonaws.com/opsshield:latest" -auto-approve
+sleep 60s
 
 CLUSTER=$(terraform output -raw ecs_cluster_name)
 TASK_DEF=$(terraform output -raw ecs_task_definition_arn)
