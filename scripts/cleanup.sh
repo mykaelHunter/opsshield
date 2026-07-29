@@ -8,7 +8,6 @@ echo ""
 sleep 30s
 
 AWS_REGION=<your-region>
-ALB_BUCKET=<your_alb_bucket_name>
 FRONTEND_BUCKET=<frontend_bucket_name>
 STATE_STORE=<your_s3_state_bucket>
 export TF_VAR_paystack_secret_key="sk_test_....."
