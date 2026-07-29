@@ -36,7 +36,7 @@ TASK_DEF=$(terraform output -raw ecs_task_definition_arn)
 SUBNETS=$(terraform output -json ecs_private_subnet_ids | jq -r 'join(",")')
 SG=$(terraform output -raw ecs_service_security_group_id)
 
-TASK_ARN=$(aws ecs run-task --cluster "$CLUSTER" --task-definition "$TASK_DEF" --launch-type FARGATE --network-configuration "awsvpcConfiguration={subnets=[$SUBNETS],securityGroups=[$SG],assignPublicIp=DISABLED}" --overrides '{"containerOverrides":[{"name":"opsshield-app","command":["node","node_modules/prisma/build/index.js","migrate","deploy"]}]}' --region ${AWS_REGION} --query 'tasks[0].taskArn' --output text)
+TASK_ARN=$(aws ecs run-task --cluster "$CLUSTER" --task-definition "$TASK_DEF" --launch-type FARGATE --network-configuration "awsvpcConfiguration={subnets=[$SUBNETS],securityGroups=[$SG],assignPublicIp=DISABLED}" --overrides '{"containerOverrides":[{"name":"opsshield-app","command":["node","prisma/seed.js"]}]}' --region ${AWS_REGION} --query 'tasks[0].taskArn' --output text)
 
 echo "Migration task: $TASK_ARN"
 
