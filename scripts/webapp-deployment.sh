@@ -4,6 +4,8 @@ set -euo pipefail
 
 ACCOUNT_ID=<your-iam-accountid>
 AWS_REGION=<your-region>
+export TF_VAR_paystack_secret_key="sk_test_....."
+export TF_VAR_smtp_pass="<Any hex string>"
 export VITE_API_URL="https://<backend_domain_url_from_terraform>"
 
 cd ..
@@ -27,7 +29,7 @@ echo ""
 
 cd infra/envs/prod
 
-terraform apply -target=module.ecr -target=module.dns_acm.aws_acm_certificate.this -target=module.alb -var="image_uri=${ACCOUNT_ID}.dkr.ecr.${AWS_REGION}.amazonaws.com/opsshield:latest"
+terraform apply -target=module.ecs -target=module.dns_acm.aws_acm_certificate.this -target=module.alb -var="image_uri=${ACCOUNT_ID}.dkr.ecr.${AWS_REGION}.amazonaws.com/opsshield:latest" -auto-approve
 
 CLUSTER=$(terraform output -raw ecs_cluster_name)
 TASK_DEF=$(terraform output -raw ecs_task_definition_arn)
