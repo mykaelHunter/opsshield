@@ -73,6 +73,34 @@ a restore from an RDS snapshot.
 
 ---
 
+## 2a. Deploying to staging
+
+`infra/envs/staging` reuses two account-level resources created only in
+`infra/envs/prod`'s state — the ECR repository and the GitHub OIDC deploy
+role. Don't run `terraform-setup.sh` unmodified against staging as-is; it
+hardcodes the prod path. Instead, from `infra/envs/staging`:
+
+```bash
+cd infra/envs/staging
+cp terraform.tfvars.example terraform.tfvars   # fill in values
+export TF_VAR_paystack_secret_key="sk_test_..."
+export TF_VAR_smtp_pass="..."
+terraform init
+terraform apply -var="image_uri=placeholder"   # first apply, same ordering caveats as prod — see infra/README.md
+```
+
+`webapp-deployment.sh` targets `infra/envs/prod` by path; for staging,
+either parameterize the script's `cd` target or run the equivalent steps
+manually against `infra/envs/staging`. CI's `develop`-branch builds should
+point at the staging stack's Terraform outputs, not prod's.
+
+**After the first apply of either GuardDuty or the SNS topic in
+`infra/envs/prod`**: check the inbox for `security_alert_email` and
+confirm the SNS subscription. An unconfirmed subscription silently drops
+every finding — you won't get an error, you just won't get alerted.
+
+---
+
 ## 3. Incident response quick reference
 
 | Symptom | First checks |

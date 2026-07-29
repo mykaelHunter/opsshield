@@ -17,9 +17,9 @@ automation are all in place. This is a working, deployable stack.
 | Terraform infrastructure (`infra/`) | ✅ Complete — modular, one stack per env |
 | CI/CD (Gitleaks, Semgrep, Trivy, tests, ECR/ECS deploy via OIDC) | ✅ Complete |
 | Deployment automation scripts (`scripts/`) | ✅ Complete |
-| Security hardening (GuardDuty, Security Hub, pen test, audit report) | ⬜ Not started |
+| Security hardening — GuardDuty + Security Hub | 🟨 Infra in place, burn-in + pen test pending — see `docs/audit-report.md` |
 | Feature flags for launch day | ⬜ Not started |
-| Staging environment (`infra/envs/staging`) | ⬜ Not started |
+| Staging environment (`infra/envs/staging`) | ✅ Complete — shares prod's ECR repo & GitHub OIDC role, separate VPC/state |
 
 ---
 
@@ -36,13 +36,16 @@ opsshield/
 ├── prisma/                      schema, migrations, seed script
 ├── frontend/                    React + Vite SPA (auth, tasks, members, billing)
 ├── infra/                       Terraform, module-based (see infra/README.md)
-│   ├── modules/                 vpc, dns_acm, ecr, rds, secrets, alb, ecs, cloudwatch, github_oidc
-│   └── envs/prod/                composed prod stack
+│   ├── modules/                 vpc, dns_acm, ecr, rds, secrets, alb, ecs, cloudwatch,
+│   │                            github_oidc, guardduty, security_hub
+│   └── envs/
+│       ├── prod/                 composed prod stack (owns account-level singletons)
+│       └── staging/               same composition, reuses prod's ECR repo & OIDC role
 ├── scripts/                     deployment & lifecycle automation
 │   ├── terraform-setup.sh        bootstrap state bucket + first infra apply
 │   ├── webapp-deployment.sh       build/push image, run migrations, deploy backend + frontend
 │   └── cleanup.sh                 tear down all AWS resources for the stack
-├── docs/                        runbook.md, architecture.md (this change)
+├── docs/                        architecture.md, runbook.md, audit-report.md
 ├── .github/workflows/ci.yml     security scan → test → build/push → deploy
 ├── Dockerfile                   multi-stage, non-root, stripped npm at runtime
 ├── docker-compose.yml           local app + Postgres
@@ -141,6 +144,7 @@ See [`docs/architecture.md`](docs/architecture.md) for how these fit together, a
 
 - [`docs/architecture.md`](docs/architecture.md) — system architecture and request/deploy flow diagrams
 - [`docs/runbook.md`](docs/runbook.md) — operational runbook: deploy, rollback, teardown, incident response
+- [`docs/audit-report.md`](docs/audit-report.md) — security audit tracking: threat model, tooling, outstanding sign-offs
 - [`infra/README.md`](infra/README.md) — Terraform module layout and bootstrap steps
 
 ---

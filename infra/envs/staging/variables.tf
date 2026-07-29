@@ -74,32 +74,7 @@ variable "budget_alert_email" {
   type = string
 }
 
-variable "security_alert_email" {
-  type        = string
-  description = "Where GuardDuty high/medium severity findings get emailed. Can reuse budget_alert_email for a lab environment."
-}
-
-variable "github_org" {
-  type        = string
-  default     = "mykaelHunter"
-  description = "GitHub org/user that owns this repo - scopes who can assume the deploy role via OIDC"
-}
-
-variable "github_repo" {
-  type        = string
-  default     = "opsshield"
-  description = "Repo name only, no org prefix"
-}
-
-variable "github_owner_id" {
-  type        = string
-  default     = "6595875"
-  description = "Numeric GitHub owner ID - required for the immutable OIDC subject claim format. See infra/modules/github_oidc/main.tf for how to find it."
-}
-
-variable "github_repo_id" {
-  type        = string
-  default     = "1294943805"
-  description = "Numeric GitHub repository ID - required for the immutable OIDC subject claim format."
-}
+# security_alert_email and github_* variables are intentionally absent —
+# guardduty and github_oidc are account-level singletons owned by
+# infra/envs/prod, not instantiated here. See main.tf notes.
 

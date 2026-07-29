@@ -1,8 +1,8 @@
 locals {
-  name = "opsshield-prod"
+  name = "opsshield-staging"
   tags = {
     Project     = "opsshield"
-    Environment = "prod"
+    Environment = "staging"
   }
 }
 
@@ -24,20 +24,13 @@ module "frontend" {
   tags    = local.tags
 }
 
-module "github_oidc" {
-  source = "../../modules/github_oidc"
-
-  github_org          = var.github_org
-  github_repo         = var.github_repo
-  github_owner_id     = var.github_owner_id
-  github_repo_id      = var.github_repo_id
-  ecr_repository_arn  = module.ecr.repository_arn
-  # "develop" added so CI can assume this same role when deploying to
-  # infra/envs/staging (which has no github_oidc module of its own —
-  # the OIDC provider is account-scoped, see staging/main.tf).
-  allowed_branches    = ["main", "develop"]
-  tags                = local.tags
-}
+# github_oidc is intentionally NOT instantiated here — the OIDC provider
+# (aws_iam_openid_connect_provider) is a single account-level resource,
+# and module.github_oidc in infra/envs/prod already creates it plus the
+# deploy role. Widen that role's `allowed_branches` to include "develop"
+# (see infra/envs/prod/main.tf) so CI can assume the same role when
+# deploying to staging from the develop branch — do not create a second
+# provider here, it will fail with "already exists".
 
 module "vpc" {
 
@@ -45,8 +38,8 @@ module "vpc" {
 
   name                  = local.name
   azs                   = var.azs
-  public_subnet_cidrs   = ["10.20.0.0/24", "10.20.1.0/24"]
-  private_subnet_cidrs  = ["10.20.10.0/24", "10.20.11.0/24"]
+  public_subnet_cidrs   = ["10.30.0.0/24", "10.30.1.0/24"]
+  private_subnet_cidrs  = ["10.30.10.0/24", "10.30.11.0/24"]
   tags                  = local.tags
 }
 
@@ -55,11 +48,13 @@ module "vpc" {
 # ("$ECR_REGISTRY/opsshield:$IMAGE_TAG"). One shared repo across
 # environments is standard for ECR; only image tags differ per deploy,
 # not the repository itself.
-module "ecr" {
-  source = "../../modules/ecr"
-
+# ECR is NOT created here — module.ecr in infra/envs/prod already owns
+# the "opsshield" repository, and repo names are account/region-unique,
+# so instantiating the module again here would collide with prod's
+# real resource. Staging reuses the same repo (different image tags
+# per deploy, same as prod) via a data lookup instead.
+data "aws_ecr_repository" "opsshield" {
   name = "opsshield"
-  tags = local.tags
 }
 
 # ── Bootstrap ordering note ────────────────────────────────────────────
@@ -126,24 +121,17 @@ module "cloudwatch" {
 
   name                = local.name
   budget_alert_email  = var.budget_alert_email
-  monthly_budget_usd  = 300
+  monthly_budget_usd  = 100 # smaller footprint than prod — 1 task, no HA minimum
   tags                = local.tags
 }
 
-module "guardduty" {
-  source = "../../modules/guardduty"
-
-  name        = local.name
-  alert_email = var.security_alert_email
-  tags        = local.tags
-}
-
-module "security_hub" {
-  source = "../../modules/security_hub"
-
-  name = local.name
-  tags = local.tags
-}
+# guardduty and security_hub are NOT instantiated here — both create
+# account-level, region-level singleton resources (one GuardDuty detector,
+# one Security Hub subscription per account per region), which
+# infra/envs/prod already owns. A second instantiation here would fail
+# with "already exists". Both already cover this account's staging
+# resources automatically — no per-environment opt-in is possible or
+# needed.
 
 module "ecs" {
   source = "../../modules/ecs"
@@ -156,7 +144,7 @@ module "ecs" {
   image_uri              = var.image_uri
   log_group_name         = module.cloudwatch.log_group_name
   secret_arns            = module.secrets.secret_arns
-  desired_count           = 2
+  desired_count           = 1 # staging doesn't need prod's HA minimum of 2
 
   non_secret_env = {
     NODE_ENV         = "production"

@@ -12,15 +12,40 @@ infra/
 │   ├── secrets/      Secrets Manager — one secret per credential
 │   ├── alb/          ALB, HTTPS-only listener, HTTP→HTTPS redirect, access logs
 │   ├── ecs/          Fargate cluster, task def, service, autoscaling, IAM roles
-│   └── cloudwatch/   App log group, monthly budget alert
+│   ├── cloudwatch/   App log group, monthly budget alert
+│   ├── guardduty/    Threat detection, EventBridge → SNS email alert on findings
+│   └── security_hub/ CIS + AWS Foundational standards, ingests GuardDuty findings
 └── envs/
-    └── prod/         Composes the modules above into one deployable stack
-        ├── main.tf
-        ├── variables.tf
-        ├── outputs.tf
-        ├── versions.tf
-        └── terraform.tfvars.example
+    ├── prod/         Composes the modules above into one deployable stack
+    │   ├── main.tf
+    │   ├── variables.tf
+    │   ├── outputs.tf
+    │   ├── versions.tf
+    │   └── terraform.tfvars.example
+    └── staging/      Same composition, smaller sizing, separate state file
 ```
+
+## GuardDuty & Security Hub
+
+Both are account-level services (one detector / one Security Hub
+subscription per account per region). If either is already enabled
+elsewhere in the AWS account — e.g. via AWS Organizations delegated
+admin — these resources will fail with an "already exists" error on
+apply. In that case, import the existing resource instead of creating a
+new one:
+
+```bash
+terraform import module.guardduty.aws_guardduty_detector.this <detector-id>
+terraform import module.security_hub.aws_securityhub_account.this <account-id>
+```
+
+GuardDuty findings at or above severity 4.0 (configurable via
+`minimum_severity_to_alert`) are routed through EventBridge to an SNS
+topic with an email subscription — confirm the subscription email
+(check your inbox after the first apply) or you won't receive alerts.
+Security Hub automatically ingests GuardDuty findings once both are
+enabled in the same account/region; no extra wiring is required beyond
+enabling both modules.
 
 Add `envs/staging/` later by copying `envs/prod/` and changing `local.name`,
 CIDR ranges, and instance sizes — each environment gets its own state file
