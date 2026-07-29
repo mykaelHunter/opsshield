@@ -37,6 +37,7 @@ module "vpc" {
   source = "../../modules/vpc"
 
   name                  = local.name
+  cidr_block            = "10.30.0.0/16" # module default is 10.20.0.0/16 (prod's range) — must override here or the 10.30.x subnets below fall outside the VPC's own block
   azs                   = var.azs
   public_subnet_cidrs   = ["10.30.0.0/24", "10.30.1.0/24"]
   private_subnet_cidrs  = ["10.30.10.0/24", "10.30.11.0/24"]

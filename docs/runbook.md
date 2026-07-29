@@ -99,6 +99,62 @@ point at the staging stack's Terraform outputs, not prod's.
 confirm the SNS subscription. An unconfirmed subscription silently drops
 every finding — you won't get an error, you just won't get alerted.
 
+**Ordering dependency — apply prod's ECR before staging, every time:**
+`infra/envs/staging/main.tf` does not create its own ECR repository. It
+does a `data "aws_ecr_repository" "opsshield"` lookup against the repo
+that only `module.ecr` in `infra/envs/prod` creates (repos are shared
+across environments; only image tags differ). A `data` source can't
+create anything, so if that repo doesn't exist yet — prod never applied,
+or was torn down via `cleanup.sh` — staging's `terraform apply`/`plan`
+fails immediately with:
+
+```
+Error: reading ECR Repository (opsshield): couldn't find resource
+  with data.aws_ecr_repository.opsshield,
+  on main.tf line 56, in data "aws_ecr_repository" "opsshield":
+```
+
+Fix, in order:
+1. Confirm the repo actually exists where staging expects it:
+   ```bash
+   aws ecr describe-repositories --repository-names opsshield --region eu-west-1
+   ```
+2. If that also 404s, create at least prod's ECR piece first, then retry staging:
+   ```bash
+   cd infra/envs/prod
+   terraform apply -target=module.ecr -var="image_uri=placeholder"
+   cd ../staging
+   terraform apply -var="image_uri=placeholder"
+   ```
+3. If the repo *does* exist, staging's `var.aws_region` (in its
+   `terraform.tfvars` or provider config) points at a different region
+   than prod's `eu-west-1` — ECR repos are region-scoped, so a same-name
+   repo in another region won't satisfy the lookup. Align the region and
+   retry.
+
+Same dependency applies to the GitHub OIDC deploy role referenced above —
+if CI fails to assume a role for staging deploys, check that prod's
+`module.github_oidc` has actually been applied and that its
+`allowed_branches` includes `develop`.
+
+**VPC `cidr_block` must be overridden to match the subnet ranges you pass:**
+`modules/vpc` defaults `cidr_block` to `10.20.0.0/16` (prod's range).
+Prod's subnets (`10.20.0.0/24`, `10.20.1.0/24`, `10.20.10.0/24`,
+`10.20.11.0/24`) fall inside that default, so prod's `main.tf` never needs
+to set it explicitly. Staging's subnets use the `10.30.x.0/24` range
+instead, but if `cidr_block` isn't also overridden to `10.30.0.0/16`, the
+VPC is still created as `10.20.0.0/16` and every subnet apply fails with:
+
+```
+Error: creating EC2 Subnet: ... api error InvalidSubnet.Range: The CIDR '10.30.0.0/24' is invalid.
+```
+
+(The message is misleading — the CIDR syntax is fine, it just doesn't
+fall inside the VPC's own block.) Fix: pass `cidr_block = "10.30.0.0/16"`
+in staging's `module "vpc"` block, matching the subnet ranges already
+listed there. Any future environment that picks its own subnet range
+(e.g. a `10.40.x` env) needs the same explicit override.
+
 ---
 
 ## 3. Incident response quick reference
@@ -110,6 +166,8 @@ every finding — you won't get an error, you just won't get alerted.
 | Paystack webhook rejected | Confirm signature verification isn't failing on a stale/rotated secret in Secrets Manager |
 | Audit log verify endpoint reports broken chain | Do not attempt to "fix" the chain — treat as a possible tamper event, preserve state, escalate |
 | CI blocked on Trivy/Semgrep | Check severity thresholds in `.github/workflows/ci.yml`; do not lower them to unblock without security sign-off |
+| `staging` apply fails: `couldn't find resource ... data.aws_ecr_repository.opsshield` | Prod's `module.ecr` hasn't been applied yet (or was destroyed), or staging's region doesn't match prod's — see "Ordering dependency" under §2a |
+| `InvalidSubnet.Range` on `module.vpc.aws_subnet.*` | The env's `cidr_block` wasn't overridden to contain its subnet CIDRs — see "VPC cidr_block" note under §2a |
 
 ---
 
