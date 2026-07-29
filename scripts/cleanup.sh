@@ -71,7 +71,6 @@ if [[ ${ENV} == "staging" ]]; then
         terraform destroy -var="image_uri=$(terraform output -raw ecr_repository_url):latest" -auto-approve
 else
         echo "This is production"
-        exit 0
 fi
 
 echo ""
