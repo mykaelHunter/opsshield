@@ -56,7 +56,7 @@ SEED_ARN=$(aws ecs run-task --cluster "$CLUSTER" --task-definition "$TASK_DEF" -
 
 echo "Seed task: $SEED_ARN"
 
-aws ecs wait tasks-stopped --cluster "$CLUSTER" --tasks "$SEED_ARN" --region eu-west-1
+aws ecs wait tasks-stopped --cluster "$CLUSTER" --tasks "$SEED_ARN" --region ${AWS_REGION}
 
 aws ecs describe-tasks --cluster "$CLUSTER" --tasks "$SEED_ARN" --region ${AWS_REGION} --query 'tasks[0].containers[0].{exitCode:exitCode,reason:reason}'
 

@@ -23,7 +23,13 @@ echo ""
 echo "Deleting any previous db snapshots"
 echo ""
 
-aws rds delete-db-snapshot --db-snapshot-identifier opsshield-${ENV}-db-final-snapshot
+aws rds delete-db-snapshot --db-snapshot-identifier opsshield-${ENV}-db-final-snapshot || exit_code=$?
+if [ $exit_code -ne 0 ]; then
+    echo "There are no snapshots yet, First deployment"
+else
+    echo "Old snapshot deleted"
+fi
+echo ""
 echo "Done"
 echo ""
 
@@ -64,6 +70,7 @@ echo ""
 
 echo "Deleting ecr repository"
 if [[ ${ENV} == "staging" ]]; then
+	aws ecr batch-delete-image --repository-name opsshield --image-ids "$(aws ecr list-images --repository-name opsshield --query 'imageIds[*]' --output json)"
         cd ..
         cd ..
         cd ..

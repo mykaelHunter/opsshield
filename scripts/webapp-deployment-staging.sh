@@ -32,6 +32,11 @@ cd infra/envs/staging
 terraform apply -target=module.ecs -var="image_uri=${ACCOUNT_ID}.dkr.ecr.${AWS_REGION}.amazonaws.com/opsshield:latest" -auto-approve
 sleep 60s
 
+CLUSTER=$(terraform output -raw ecs_cluster_name)
+TASK_DEF=$(terraform output -raw ecs_task_definition_arn)
+SUBNETS=$(terraform output -json ecs_private_subnet_ids | jq -r 'join(",")')
+SG=$(terraform output -raw ecs_service_security_group_id)
+
 TASK_ARN=$(aws ecs run-task --cluster "$CLUSTER" --task-definition "$TASK_DEF" --launch-type FARGATE --network-configuration "awsvpcConfiguration={subnets=[$SUBNETS],securityGroups=[$SG],assignPublicIp=DISABLED}" --overrides '{"containerOverrides":[{"name":"opsshield-app","command":["node","node_modules/prisma/build/index.js","migrate","deploy"]}]}' --region ${AWS_REGION} --query 'tasks[0].taskArn' --output text)
 
 echo "Migration task: $TASK_ARN"
@@ -51,7 +56,7 @@ SEED_ARN=$(aws ecs run-task --cluster "$CLUSTER" --task-definition "$TASK_DEF" -
 
 echo "Seed task: $SEED_ARN"
 
-aws ecs wait tasks-stopped --cluster "$CLUSTER" --tasks "$SEED_ARN" --region eu-west-1
+aws ecs wait tasks-stopped --cluster "$CLUSTER" --tasks "$SEED_ARN" --region ${AWS_REGION}
 
 aws ecs describe-tasks --cluster "$CLUSTER" --tasks "$SEED_ARN" --region ${AWS_REGION} --query 'tasks[0].containers[0].{exitCode:exitCode,reason:reason}'
 

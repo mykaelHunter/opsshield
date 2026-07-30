@@ -105,11 +105,19 @@ resource "aws_secretsmanager_secret_version" "smtp_pass" {
 
 output "secret_arns" {
   description = "Map of secret name to ARN, consumed by the ecs module's task definition"
+  # Deliberately reference the *_version resources, not the aws_secretsmanager_secret
+  # shells, even though .arn is identical either way. Referencing the shell gives
+  # Terraform no dependency edge forcing the version (the actual secret value) to
+  # exist before anything that consumes this output — e.g. module.ecs — gets created.
+  # Without this, the ECS service can start placing tasks against a secret ARN that
+  # has zero versions yet, which fails 100% of the time on a fresh apply with:
+  #   ResourceNotFoundException: Secrets Manager can't find the specified secret
+  #   value for staging label: AWSCURRENT
   value = {
-    database_url         = aws_secretsmanager_secret.database_url.arn
-    jwt_secret           = aws_secretsmanager_secret.jwt_secret.arn
-    jwt_refresh_secret   = aws_secretsmanager_secret.jwt_refresh_secret.arn
-    paystack_secret_key  = aws_secretsmanager_secret.paystack_secret_key.arn
-    smtp_pass            = aws_secretsmanager_secret.smtp_pass.arn
+    database_url         = aws_secretsmanager_secret_version.database_url.arn
+    jwt_secret           = aws_secretsmanager_secret_version.jwt_secret.arn
+    jwt_refresh_secret   = aws_secretsmanager_secret_version.jwt_refresh_secret.arn
+    paystack_secret_key  = aws_secretsmanager_secret_version.paystack_secret_key.arn
+    smtp_pass            = aws_secretsmanager_secret_version.smtp_pass.arn
   }
 }
