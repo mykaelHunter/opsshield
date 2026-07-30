@@ -12,7 +12,8 @@ smtp_host   = "smtp.gmail.com"
 smtp_port   = "587"
 email_from  = "noreply@opsshield.io"
 
-budget_alert_email = "team@opsshield.io"
+budget_alert_email    = "team@opsshield.io"
+security_alert_email  = "team@opsshield.io"  # GuardDuty findings — can match budget_alert_email
 
 github_org  = "your-org"   # GitHub org/user that owns this repo
 github_repo = "opsshield"  # repo name only, no org prefix

@@ -222,11 +222,16 @@ resource "aws_ecs_task_definition" "this" {
 data "aws_region" "current" {}
 
 resource "aws_ecs_service" "this" {
-  name            = "${var.name}-service"
-  cluster         = aws_ecs_cluster.this.id
-  task_definition = aws_ecs_task_definition.this.arn
-  desired_count   = var.desired_count
-  launch_type     = "FARGATE"
+  name                 = "${var.name}-service"
+  cluster              = aws_ecs_cluster.this.id
+  task_definition      = aws_ecs_task_definition.this.arn
+  desired_count        = var.desired_count
+  launch_type          = "FARGATE"
+  # Terraform only replaces the task def when image_uri's *string* changes.
+  # If you deploy with the mutable `:latest` tag instead of a per-build tag,
+  # the string never changes, so this flag is what actually forces ECS to
+  # stop the running tasks and re-pull the image on every apply.
+  force_new_deployment = true
 
   network_configuration {
     subnets          = var.private_subnet_ids

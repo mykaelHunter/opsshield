@@ -1,91 +1,95 @@
 # OpsShield
 
-> Internal ops and team management platform — built by the OpsShield founding engineering team.
+> Multi-tenant ops and team management SaaS — Expadox Lab Series A Capstone.
 
 ---
 
-## The situation
+## Status
 
-You are the founding engineering team of OpsShield. Series A closed 72 hours ago.  
-Three weeks to investor demo, enterprise security audit, and public launch — on the same day.
+The MVP scaffold, backend hardening, infrastructure, frontend, and deployment
+automation are all in place. This is a working, deployable stack.
 
-Read the full brief before touching any code.
-
----
-
-## What is already here
-
-This repository contains the MVP scaffold — the foundation is built, the security patterns are established, and the architecture decisions are made. Your job is to complete it, harden it, and ship it.
-
-**What exists:**
-- Express + Node.js API with all security middleware wired (Helmet, CORS, rate limiting)
-- JWT auth with refresh token rotation — register, login, logout, refresh
-- IDOR-protected org-scoped middleware on every route
-- Append-only audit log with SHA-256 hash chain
-- Paystack webhook handler with HMAC-SHA512 signature verification
-- Task creation, assignment, and approval workflow
-- Member invite system with token-based acceptance
-- Billing initiation via Paystack
-- CI/CD pipeline with Semgrep, Gitleaks, and Trivy gates
-- Full Prisma schema — users, orgs, members, tasks, approvals, billing, audit log
-
-**What your team builds:**
-- Password reset flow (token generation, email sending, single-use enforcement)
-- Frontend — your team chooses React or server-rendered, commits on Day 1
-- Terraform infrastructure — Cloud team owns this
-- AWS deployment — ECS, RDS, ALB, Secrets Manager, CloudWatch
-- Security hardening — GuardDuty, Security Hub, penetration test, audit report
-- Feature flags for launch day control
-- Everything else in the project brief
+| Area | Status |
+|------|--------|
+| Backend API (auth, orgs, tasks, members, billing, webhooks) | ✅ Complete |
+| Password reset flow (token + email + single-use) | ✅ Complete |
+| Frontend (React/Vite) | ✅ Complete |
+| Terraform infrastructure (`infra/`) | ✅ Complete — modular, one stack per env |
+| CI/CD (Gitleaks, Semgrep, Trivy, tests, ECR/ECS deploy via OIDC) | ✅ Complete |
+| Deployment automation scripts (`scripts/`) | ✅ Complete |
+| Security hardening — GuardDuty + Security Hub | 🟨 Infra in place, burn-in + pen test pending — see `docs/audit-report.md` |
+| Feature flags for launch day | ⬜ Not started |
+| Staging environment (`infra/envs/staging`) | ✅ Complete — shares prod's ECR repo & GitHub OIDC role, separate VPC/state |
 
 ---
 
-## Team quick start
+## Repository structure
 
-### 1. Clone the repo (use the template — do not clone directly)
+```
+opsshield/
+├── src/                        Express API
+│   ├── controllers/             auth, organisations, tasks, members, billing
+│   ├── routes/                  route definitions incl. webhooks
+│   ├── middleware/               auth, validate, error handling
+│   ├── lib/                     jwt, audit log, mailer, logger, prisma client
+│   └── __tests__/               Jest test suites
+├── prisma/                      schema, migrations, seed script
+├── frontend/                    React + Vite SPA (auth, tasks, members, billing)
+├── infra/                       Terraform, module-based (see infra/README.md)
+│   ├── modules/                 vpc, dns_acm, ecr, rds, secrets, alb, ecs, cloudwatch,
+│   │                            github_oidc, guardduty, security_hub
+│   └── envs/
+│       ├── prod/                 composed prod stack (owns account-level singletons)
+│       └── staging/               same composition, reuses prod's ECR repo & OIDC role
+├── scripts/                     deployment & lifecycle automation
+│   ├── terraform-setup.sh        bootstrap state bucket + first infra apply
+│   ├── webapp-deployment.sh       build/push image, run migrations, deploy backend + frontend
+│   └── cleanup.sh                 tear down all AWS resources for the stack
+├── docs/                        architecture.md, runbook.md, audit-report.md
+├── .github/workflows/ci.yml     security scan → test → build/push → deploy
+├── Dockerfile                   multi-stage, non-root, stripped npm at runtime
+├── docker-compose.yml           local app + Postgres
+└── README.md
+```
+
+---
+
+## Quick start (local)
 
 ```bash
 git clone https://github.com/expadox-lab/opsshield.git
 cd opsshield
-```
-
-### 2. Install dependencies
-
-```bash
 npm install
-```
-
-### 3. Set up environment
-
-```bash
 cp .env.example .env
-# Fill in values — ask the Cloud team for DATABASE_URL once RDS is provisioned
-# Generate JWT secrets:
-node -e "console.log(require('crypto').randomBytes(64).toString('hex'))"
-```
+node -e "console.log(require('crypto').randomBytes(64).toString('hex'))"  # JWT secrets
 
-### 4. Run locally with Docker
-
-```bash
-docker-compose up
-# App: http://localhost:3000
-# DB:  localhost:5432
-```
-
-### 5. Run migrations and seed
-
-```bash
+docker-compose up          # app: http://localhost:3000, db: localhost:5432
 npm run db:migrate
-npm run db:seed
-# Admin:  admin@opsshield.io  / Password123!
-# Member: member@opsshield.io / Password123!
-```
-
-### 6. Run tests
-
-```bash
+npm run db:seed            # admin@opsshield.io / member@opsshield.io, Password123!
 npm test
 ```
+
+---
+
+## Deployment scripts
+
+All three scripts live in `scripts/` and are meant to be run from there
+(each does `cd ..` internally to reach the repo root). See
+[`docs/runbook.md`](docs/runbook.md) for the full walkthrough, order of
+operations, and troubleshooting.
+
+1. **`terraform-setup.sh`** — creates the encrypted/versioned S3 state
+   bucket, then runs the first `terraform plan`/`apply` in `infra/envs/prod`.
+2. **`webapp-deployment.sh`** — builds and pushes the backend image to ECR,
+   applies the ECS module, runs Prisma migrations as a one-off ECS task,
+   then builds and syncs the frontend to S3.
+3. **`cleanup.sh`** — full teardown: DB snapshot, deletion protection,
+   ECR images, frontend bucket, `terraform destroy`, state bucket, and
+   CloudWatch log groups.
+
+All three require variables (`ACCOUNT_ID`, `AWS_REGION`, bucket/state names)
+to be edited in place before running, and export `TF_VAR_paystack_secret_key`
+/ `TF_VAR_smtp_pass` for the Terraform run.
 
 ---
 
@@ -122,56 +126,27 @@ npm test
 
 ---
 
-## Security patterns already implemented — read before you build
+## Security patterns implemented
 
-**IDOR protection:** Every org-scoped route uses `requireOrgMember` middleware. This verifies the authenticated user is a member of the org in the URL before any data is touched. Never query org data without this middleware in place.
+- **IDOR protection** — every org-scoped route uses `requireOrgMember` middleware.
+- **Mass assignment protection** — update endpoints use explicit field allowlists, never raw `req.body`.
+- **Paystack webhook verification** — HMAC-SHA512 via `crypto.timingSafeEqual` before processing.
+- **Append-only audit log** — SHA-256 hash chain, all writes go through `src/lib/audit.js`.
+- **JWT secrets** — from env vars / Secrets Manager only, app throws at startup if missing.
+- **Password reset** — random token hashed at rest, single-use, short TTL, refresh sessions revoked on reset.
 
-**Mass assignment protection:** Every update endpoint uses an explicit allowlist. `req.body` is never passed directly to Prisma. Only permitted fields are extracted individually.
-
-**Paystack webhook verification:** The webhook handler verifies HMAC-SHA512 signature using `crypto.timingSafeEqual` before processing any event. Do not remove or bypass this check.
-
-**Audit log:** The audit log is append-only with a SHA-256 hash chain. Every write goes through `src/lib/audit.js`. Do not write directly to the AuditLog table from anywhere else.
-
-**JWT secrets:** Must come from environment variables or AWS Secrets Manager. They are never hardcoded. The app throws at startup if they are missing.
-
----
-
-## What the Security team must do before Week 2
-
-- [ ] Threat model every route in this README before the DevOps team adds new ones
-- [ ] Review the Prisma schema for data minimisation gaps
-- [ ] Define Semgrep blocking threshold for the CI pipeline
-- [ ] Confirm Gitleaks config covers all secret patterns for this stack
-- [ ] Sign off on the JWT implementation in `src/lib/jwt.js` and `src/middleware/auth.js`
-- [ ] Sign off on the Paystack webhook handler in `src/routes/webhooks.js`
+See [`docs/architecture.md`](docs/architecture.md) for how these fit together, and
+[`infra/README.md`](infra/README.md) for Terraform-specific design decisions.
 
 ---
 
-## What the Cloud team must do before Week 1 ends
+## Documentation
 
-- [ ] VPC, ECS, RDS provisioned via Terraform
-- [ ] Domain live with ACM certificate — HTTPS only
-- [ ] Secrets Manager configured — `DATABASE_URL`, `JWT_SECRET`, `JWT_REFRESH_SECRET`, `PAYSTACK_SECRET_KEY`
-- [ ] ECS task definition referencing Secrets Manager — no env vars in the task definition itself
-- [ ] CloudWatch log group created and ECS configured to write to it
-- [ ] RDS backup retention set to 7 days minimum
+- [`docs/architecture.md`](docs/architecture.md) — system architecture and request/deploy flow diagrams
+- [`docs/runbook.md`](docs/runbook.md) — operational runbook: deploy, rollback, teardown, incident response
+- [`docs/audit-report.md`](docs/audit-report.md) — security audit tracking: threat model, tooling, outstanding sign-offs
+- [`infra/README.md`](infra/README.md) — Terraform module layout and bootstrap steps
 
 ---
 
-## Deployment
-
-The CI pipeline (`.github/workflows/ci.yml`) runs on every push:
-
-1. Gitleaks — secrets scan across full git history
-2. Semgrep — static analysis against Node.js + OWASP Top 10 rules
-3. Trivy — filesystem dependency scan (blocks on Critical/High)
-4. Tests — Jest with coverage
-5. Build + push to ECR (main branch only)
-6. Trivy — container image scan (blocks on Critical)
-7. Deploy to ECS via `update-service`
-
-The pipeline uses OIDC — no stored AWS credentials anywhere.
-
----
-
-*OpsShield — Expadox Lab Series A Capstone · Built by the founding engineering team*
+*OpsShield — Expadox Lab Capstone*

@@ -10,6 +10,7 @@ import Dashboard from './pages/Dashboard';
 import Tasks from './pages/Tasks';
 import Members from './pages/Members';
 import Billing from './pages/Billing';
+import BillingCallback from './pages/BillingCallback';
 import './styles.css';
 
 export default function App() {
@@ -27,6 +28,7 @@ export default function App() {
           <Route path="/tasks" element={<RequireAuth><Tasks /></RequireAuth>} />
           <Route path="/members" element={<RequireAuth><Members /></RequireAuth>} />
           <Route path="/billing" element={<RequireAuth><Billing /></RequireAuth>} />
+          <Route path="/billing/callback" element={<RequireAuth><BillingCallback /></RequireAuth>} />
         </Routes>
       </AuthProvider>
     </BrowserRouter>
