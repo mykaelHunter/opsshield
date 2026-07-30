@@ -9,14 +9,17 @@ datasource db {
 }
 
 model Organisation {
-  id          String   @id @default(uuid())
-  name        String
-  slug        String   @unique
-  plan        Plan     @default(FREE)
-  paystackRef String?
-  deletedAt   DateTime?
-  createdAt   DateTime @default(now())
-  updatedAt   DateTime @updatedAt
+  id                       String    @id @default(uuid())
+  name                     String
+  slug                     String    @unique
+  plan                     Plan      @default(FREE)
+  paystackRef              String?
+  paystackSubscriptionCode String?   @unique
+  paystackCustomerCode     String?
+  subscriptionStatus       SubscriptionStatus @default(NONE)
+  deletedAt                DateTime?
+  createdAt                DateTime  @default(now())
+  updatedAt                DateTime  @updatedAt
 
   members     Member[]
   tasks       Task[]
@@ -33,6 +36,8 @@ model User {
   lastName          String
   resetTokenHash    String?
   resetTokenExpiry  DateTime?
+  failedLoginCount  Int       @default(0)
+  lockedUntil       DateTime?
   createdAt         DateTime  @default(now())
   updatedAt         DateTime  @updatedAt
 
@@ -178,4 +183,10 @@ enum BillingStatus {
   PENDING
   SUCCESS
   FAILED
+}
+
+enum SubscriptionStatus {
+  NONE
+  ACTIVE
+  DISABLED
 }

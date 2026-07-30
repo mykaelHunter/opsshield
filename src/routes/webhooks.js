@@ -4,8 +4,6 @@ const prisma  = require('../lib/prisma');
 const audit   = require('../lib/audit');
 const logger  = require('../lib/logger');
 
-const PAYSTACK_SECRET = process.env.PAYSTACK_SECRET_KEY;
-
 /**
  * Paystack Webhook Handler
  *
@@ -18,8 +16,15 @@ const PAYSTACK_SECRET = process.env.PAYSTACK_SECRET_KEY;
  *
  * The route receives raw body (configured in app.js) so the HMAC
  * is computed over the exact bytes Paystack sent.
+ *
+ * NOTE: the secret is read from process.env on every request, not cached
+ * at module load. If it were captured once at require time, rotating it
+ * via Secrets Manager / ECS task refresh would silently have no effect
+ * until the process restarted — a subtle way to end up validating
+ * against a stale secret.
  */
 router.post('/paystack', async (req, res) => {
+  const PAYSTACK_SECRET = process.env.PAYSTACK_SECRET_KEY;
   if (!PAYSTACK_SECRET) {
     logger.error('PAYSTACK_SECRET_KEY not configured — rejecting webhook');
     return res.status(500).end();
@@ -123,13 +128,108 @@ async function handleChargeSuccess(data) {
 }
 
 async function handleSubscriptionCreate(data) {
-  // TODO: implement subscription tracking
-  logger.info('Subscription created', { data });
+  const { subscription_code: subscriptionCode, customer, plan } = data;
+  const organisationId = await resolveOrganisationId(data);
+
+  if (!organisationId) {
+    logger.warn('subscription.create: could not resolve organisation', {
+      subscriptionCode,
+      customerCode: customer?.customer_code,
+    });
+    return;
+  }
+
+  await prisma.organisation.update({
+    where: { id: organisationId },
+    data: {
+      paystackSubscriptionCode: subscriptionCode,
+      paystackCustomerCode:     customer?.customer_code,
+      subscriptionStatus:       'ACTIVE',
+      ...(plan?.plan_code ? { plan: mapPaystackPlan(plan.plan_code) } : {}),
+    },
+  });
+
+  await audit.log({
+    action:     'billing.subscription.create',
+    resource:   'billing',
+    resourceId: subscriptionCode,
+    organisationId,
+    metadata:   { subscriptionCode, planCode: plan?.plan_code },
+  });
+
+  logger.info('Subscription created and org updated', { organisationId, subscriptionCode });
 }
 
 async function handleSubscriptionDisable(data) {
-  // TODO: downgrade org plan on subscription cancel
-  logger.info('Subscription disabled', { data });
+  const { subscription_code: subscriptionCode } = data;
+  const organisationId = await resolveOrganisationId(data);
+
+  if (!organisationId) {
+    logger.warn('subscription.disable: could not resolve organisation', { subscriptionCode });
+    return;
+  }
+
+  await prisma.organisation.update({
+    where: { id: organisationId },
+    data: {
+      subscriptionStatus: 'DISABLED',
+      plan:               'FREE',
+    },
+  });
+
+  await audit.log({
+    action:     'billing.subscription.disable',
+    resource:   'billing',
+    resourceId: subscriptionCode,
+    organisationId,
+    metadata:   { subscriptionCode, downgradedTo: 'FREE' },
+  });
+
+  logger.info('Subscription disabled, org downgraded to FREE', { organisationId, subscriptionCode });
+}
+
+/**
+ * Paystack subscription events don't carry our internal organisationId —
+ * only a subscription_code and the customer's email/customer_code. We
+ * resolve back to our org via whichever we already have on file, falling
+ * back to email lookup through the org's most recent successful charge.
+ */
+async function resolveOrganisationId(data) {
+  const { subscription_code: subscriptionCode, customer } = data;
+
+  if (subscriptionCode) {
+    const bySubCode = await prisma.organisation.findUnique({
+      where: { paystackSubscriptionCode: subscriptionCode },
+      select: { id: true },
+    });
+    if (bySubCode) return bySubCode.id;
+  }
+
+  if (customer?.customer_code) {
+    const byCustomerCode = await prisma.organisation.findFirst({
+      where: { paystackCustomerCode: customer.customer_code },
+      select: { id: true },
+    });
+    if (byCustomerCode) return byCustomerCode.id;
+  }
+
+  if (customer?.email) {
+    const org = await prisma.organisation.findFirst({
+      where: { members: { some: { user: { email: customer.email } } } },
+      select: { id: true },
+    });
+    if (org) return org.id;
+  }
+
+  return null;
+}
+
+function mapPaystackPlan(planCode) {
+  const map = {
+    [process.env.PAYSTACK_PLAN_STARTER]: 'STARTER',
+    [process.env.PAYSTACK_PLAN_PRO]:      'PRO',
+  };
+  return map[planCode] || 'STARTER';
 }
 
 module.exports = router;

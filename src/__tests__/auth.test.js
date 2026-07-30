@@ -119,3 +119,70 @@ describe('IDOR protection', () => {
     expect(res.status).toBe(403);
   });
 });
+
+describe('account lockout', () => {
+  const email = 'lockout-target@example.com';
+
+  beforeAll(async () => {
+    await request(app).post('/api/auth/register').send({
+      email, password: 'Password123!',
+      firstName: 'Lock', lastName: 'Target', orgName: 'Lockout Org',
+    });
+  });
+
+  it('locks the account after 5 consecutive failed attempts', async () => {
+    let res;
+    for (let i = 0; i < 5; i++) {
+      res = await request(app).post('/api/auth/login').send({
+        email, password: 'wrong-password',
+      });
+    }
+    // the 5th failure is what crosses the threshold — still reported
+    // as a generic 401, since the lockout itself has just been set
+    expect(res.status).toBe(401);
+
+    // 6th attempt, even with the CORRECT password, should now be blocked
+    const lockedRes = await request(app).post('/api/auth/login').send({
+      email, password: 'Password123!',
+    });
+    expect(lockedRes.status).toBe(423);
+    expect(lockedRes.body.error).toMatch(/temporarily locked/i);
+  });
+
+  it('does not lock out other accounts', async () => {
+    const res = await request(app).post('/api/auth/login').send({
+      email: 'test@example.com', // registered earlier in this file
+      password: 'Password123!',
+    });
+    expect(res.status).toBe(200);
+  });
+
+  it('resets the counter and unlocks on a successful login after the lock expires', async () => {
+    // simulate lockout window having already elapsed, without waiting 15 real minutes
+    const user = await prisma.user.findUnique({ where: { email } });
+    await prisma.user.update({
+      where: { id: user.id },
+      data: { lockedUntil: new Date(Date.now() - 1000) }, // 1s in the past
+    });
+
+    const res = await request(app).post('/api/auth/login').send({
+      email, password: 'Password123!',
+    });
+    expect(res.status).toBe(200);
+
+    const after = await prisma.user.findUnique({ where: { email } });
+    expect(after.failedLoginCount).toBe(0);
+    expect(after.lockedUntil).toBeNull();
+  });
+
+  it('does not increment the counter for an unknown email', async () => {
+    const res = await request(app).post('/api/auth/login').send({
+      email: 'never-registered@example.com',
+      password: 'whatever',
+    });
+    expect(res.status).toBe(401);
+    // no user row exists to check — this just confirms no crash/500
+    // and the generic message is preserved for unknown accounts
+    expect(res.body.error).toBe('Invalid email or password');
+  });
+});

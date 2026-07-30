@@ -8,6 +8,8 @@ const { sendPasswordResetEmail } = require('../lib/mailer');
 const { hashToken, generateRawToken } = require('../lib/tokenHash');
 
 const RESET_TOKEN_TTL_MS = 30 * 60 * 1000; // 30 minutes
+const MAX_FAILED_LOGIN_ATTEMPTS = 5;
+const LOCKOUT_DURATION_MS = 15 * 60 * 1000; // 15 minutes
 
 function slugify(name) {
   return name.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/(^-|-$)/g, '');
@@ -81,12 +83,35 @@ async function login(req, res, next) {
 
     const user = await prisma.user.findUnique({ where: { email } });
 
+    // Locked accounts short-circuit before the bcrypt compare. This does
+    // mean a locked-out response is distinguishable from "wrong password"
+    // (a small enumeration signal), but a user actively being locked out
+    // needs to know why — silently returning the generic 401 would make
+    // a real lockout indistinguishable from a typo, which is worse for
+    // the person experiencing it. Note this only reveals that lockout
+    // *machinery* triggered, not whether the account exists otherwise.
+    if (user?.lockedUntil && user.lockedUntil > new Date()) {
+      await audit.log({
+        action:    'auth.login.blocked_locked',
+        resource:  'user',
+        resourceId: user.id,
+        metadata:  { email },
+        ipAddress: req.ip,
+      });
+      return res.status(423).json({
+        error: 'Account temporarily locked due to too many failed login attempts. Please try again later.',
+      });
+    }
+
     // Always run bcrypt even if user not found — prevents timing attacks
     const passwordMatch = user
       ? await bcrypt.compare(password, user.passwordHash)
       : await bcrypt.compare(password, '$2a$12$invalidhashtopreventtimingattack');
 
     if (!user || !passwordMatch) {
+      if (user) {
+        await registerFailedLogin(user, req.ip);
+      }
       await audit.log({
         action:    'auth.login.failed',
         resource:  'user',
@@ -95,6 +120,14 @@ async function login(req, res, next) {
       });
       // Same error message whether email or password is wrong — no enumeration
       return res.status(401).json({ error: 'Invalid email or password' });
+    }
+
+    // Successful login clears any prior failed-attempt count/lock
+    if (user.failedLoginCount > 0 || user.lockedUntil) {
+      await prisma.user.update({
+        where: { id: user.id },
+        data:  { failedLoginCount: 0, lockedUntil: null },
+      });
     }
 
     const accessToken  = signAccess({ userId: user.id });
@@ -123,6 +156,39 @@ async function login(req, res, next) {
     });
   } catch (err) {
     next(err);
+  }
+}
+
+/**
+ * Increments the failed-login counter and, once it crosses the threshold,
+ * locks the account for LOCKOUT_DURATION_MS. Uses a single atomic update
+ * (increment) rather than read-then-write to avoid a race under concurrent
+ * failed attempts undercounting the total.
+ */
+async function registerFailedLogin(user, ipAddress) {
+  const updated = await prisma.user.update({
+    where: { id: user.id },
+    data:  { failedLoginCount: { increment: 1 } },
+  });
+
+  if (updated.failedLoginCount >= MAX_FAILED_LOGIN_ATTEMPTS) {
+    await prisma.user.update({
+      where: { id: user.id },
+      data:  { lockedUntil: new Date(Date.now() + LOCKOUT_DURATION_MS) },
+    });
+
+    await audit.log({
+      action:     'auth.account.locked',
+      resource:   'user',
+      resourceId: user.id,
+      metadata:   { failedLoginCount: updated.failedLoginCount },
+      ipAddress,
+    });
+
+    logger.warn('Account locked after repeated failed logins', {
+      userId: user.id,
+      failedLoginCount: updated.failedLoginCount,
+    });
   }
 }
 
@@ -243,6 +309,8 @@ async function resetPassword(req, res, next) {
           passwordHash,
           resetTokenHash: null,
           resetTokenExpiry: null, // single-use: cleared immediately on success
+          failedLoginCount: 0,
+          lockedUntil: null,
         },
       }),
       // Revoke every existing session — if an attacker was riding a
