@@ -195,7 +195,7 @@ jobs:
             -var="domain_name=${{ secrets.DOMAIN_NAME }}" \
             -var="parent_zone_name=${{ secrets.PARENT_ZONE_NAME }}" \
             -var="smtp_user=${{ secrets.SMTP_USER }}" \
-            -var="security_alert_email=${{ secrets.SECURITY_ALERT_EMAIL }}" \    
+            -var="security_alert_email=${{ secrets.SECURITY_ALERT_EMAIL }}" \
             -var="budget_alert_email=${{ secrets.BUDGET_ALERT_EMAIL }}"
 
       - name: Run database migrations
