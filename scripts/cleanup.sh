@@ -10,8 +10,8 @@ echo ""
 sleep 30s
 
 ENV=<environment>
-ACCOUNT_ID=<your-iam-account-id>
-AWS_REGION=<your-region>
+ACCOUNT_ID=$(aws sts get-caller-identity --query Account --output text)
+AWS_REGION=$(aws configure get region)
 FRONTEND_BUCKET=opsshield-${ENV}-frontend-${ACCOUNT_ID}
 STATE_STORE=<your_s3_state_bucket>
 export TF_VAR_paystack_secret_key="sk_test_....."

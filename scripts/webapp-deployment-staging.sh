@@ -2,8 +2,8 @@
 
 set -euo pipefail
 
-ACCOUNT_ID=<your-iam-accountid>
-AWS_REGION=<your-region>
+ACCOUNT_ID=$(aws sts get-caller-identity --query Account --output text)
+AWS_REGION=$(aws configure get region)
 export TF_VAR_paystack_secret_key="sk_test_....."
 export TF_VAR_smtp_pass="<Any hex string>"
 export VITE_API_URL="https://<backend_domain_url_from_terraform>"
