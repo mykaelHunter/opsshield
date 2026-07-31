@@ -24,6 +24,8 @@ echo "Image pushed successfully"
 echo ""
 sleep 30s
 
+aws ecs update-service --cluster opsshield-prod-cluster --service opsshield-prod-service --force-new-deployment --region ${AWS_REGION}
+
 echo "Running database migrations"
 echo ""
 
