@@ -90,17 +90,29 @@ sequenceDiagram
     end
 ```
 
+## Account lockout
+
+Login checks `lockedUntil` before the bcrypt compare. Five failed attempts
+(`failedLoginCount`, incremented atomically) locks the account for 15
+minutes; a successful login or password reset clears both fields. A locked
+account gets a distinct `423` response rather than the generic `401`, which
+is a deliberate small enumeration trade-off — a user actively locked out
+needs to know why.
+
 ## Deployment flow
 
 ```mermaid
 flowchart LR
-    A[terraform-setup.sh] -->|"S3 state bucket + first terraform apply"| B[infra provisioned<br/>VPC, RDS, ALB, ECR, ECS, Secrets]
-    B --> C[webapp-deployment.sh]
+    A[terraform-setup-prod.sh] -->|"S3 state bucket + first terraform apply"| B[infra provisioned<br/>VPC, RDS, ALB, ECR, ECS, Secrets]
+    B --> C[webapp-deployment-prod.sh]
     C -->|"1. docker build/push"| D[ECR image]
-    D -->|"2. terraform apply -target=module.ecs"| E[ECS service updated]
+    D -->|"2. ecs update-service --force-new-deployment"| E[ECS service updated]
     E -->|"3. one-off ECS task"| F[Prisma migrate deploy]
-    F -->|"4. npm run build + s3 sync"| G[Frontend on S3]
+    F -->|"4. one-off ECS task, skipped on migration failure"| FS[Seed task]
+    FS -->|"5. npm run build + s3 sync"| G[Frontend on S3]
     H[cleanup.sh] -.->|teardown, reverse order| B
+    I[terraform-setup-staging.sh] -->|"applies prod's module.ecr, then staging stack"| B
+    I --> J[webapp-deployment-staging.sh]
 ```
 
 ## Design notes
@@ -116,5 +128,18 @@ flowchart LR
   (`module.github_oidc`), restricted to `main`-branch workflow runs on this
   repo — no long-lived AWS credentials stored anywhere.
 - **Migrations run out-of-band** from app startup, as a one-off Fargate task
-  triggered by `webapp-deployment.sh`, so a bad migration can't crash-loop
-  the running service.
+  triggered by `webapp-deployment-prod.sh` / `webapp-deployment-staging.sh`,
+  so a bad migration can't crash-loop the running service. The seed task
+  runs immediately after as a second one-off task, and is skipped entirely
+  if the migration task exits non-zero.
+- **Secrets Manager dependency ordering**: `module.secrets`'s `secret_arns`
+  output references the `*_version` resources (not the secret shells), so
+  Terraform won't create anything that consumes a secret ARN — e.g.
+  `module.ecs` — until the secret actually has a value. This closes the
+  race described in `docs/runbook.md` where ECS could be pointed at a
+  secret with zero versions.
+- **ECR `force_delete = true`**: every merge to `main` pushes at least two
+  tags (git SHA + `:latest`), so a repo is never actually empty by the time
+  `cleanup.sh` runs `terraform destroy`. Unlike RDS, there's no data here
+  worth protecting from accidental deletion, so the repo is destroyable
+  even when non-empty.

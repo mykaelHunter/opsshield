@@ -13,10 +13,12 @@ Run all `scripts/*.sh` commands from inside `scripts/` — each script does
 - Node.js ≥ 18
 - `infra/envs/prod/terraform.tfvars` created from `terraform.tfvars.example`
 
-Before running any script, edit its placeholder variables in place:
-`ACCOUNT_ID`, `AWS_REGION`, and (for `cleanup.sh`) `FRONTEND_BUCKET` /
-`STATE_STORE`. All three scripts also expect
-`TF_VAR_paystack_secret_key` and `TF_VAR_smtp_pass` exported before they run.
+`ACCOUNT_ID` and `AWS_REGION` are resolved automatically at run time via
+`aws sts get-caller-identity` / `aws configure get region` — no need to
+edit those in place. You still need to edit each script's remaining
+placeholders: `ENV` and (for `cleanup.sh`) `STATE_STORE`. All scripts also
+expect `TF_VAR_paystack_secret_key` and `TF_VAR_smtp_pass` exported before
+they run; `webapp-deployment-*.sh` additionally expect `VITE_API_URL`.
 
 ---
 
@@ -68,11 +70,11 @@ in the first place. Staging can stay at `0` for fast iteration.
 
 ---
 
-## 1. First-time provisioning — `terraform-setup.sh`
+## 1. First-time provisioning — `terraform-setup-prod.sh`
 
 ```bash
 cd scripts
-./terraform-setup.sh
+./terraform-setup-prod.sh
 ```
 
 What it does:
@@ -93,23 +95,32 @@ Notes:
 
 ---
 
-## 2. Deploying an update — `webapp-deployment.sh`
+## 2. Deploying an update — `webapp-deployment-prod.sh`
 
 ```bash
 cd scripts
-./webapp-deployment.sh
+./webapp-deployment-prod.sh
 ```
 
 What it does, in order:
 1. Logs into ECR, builds the backend Docker image, tags and pushes it.
-2. Applies only `module.ecs` with the new `image_uri`.
+2. Runs `aws ecs update-service --force-new-deployment` against the prod
+   cluster/service (no `terraform apply` step — this just rolls the
+   already-applied task definition forward onto the new image).
 3. Reads the ECS cluster/task-def/subnets/security-group from Terraform
    outputs, and runs a **one-off Fargate task** overriding the container
    command to `node node_modules/prisma/build/index.js migrate deploy`.
-4. Waits for that migration task to stop, then prints its exit code and
-   reason — **check this before assuming the deploy succeeded.**
-5. Builds the frontend (`npm run build`) and syncs `dist/` to the S3
+4. Waits for that migration task to stop, then prints its exit code —
+   **check this before assuming the deploy succeeded.** If the exit code
+   is non-zero, the script exits and does **not** run the seed task.
+5. Runs a second one-off Fargate task to run `prisma/seed.js`, waits for
+   it to stop, and prints its exit code/reason.
+6. Builds the frontend (`npm run build`) and syncs `dist/` to the S3
    frontend bucket with `--delete`.
+
+`webapp-deployment-staging.sh` does the same thing against the staging
+stack (`opsshield-staging-cluster`/`-service`, `infra/envs/staging`
+outputs).
 
 Rollback if a migration fails: the ECS service is still running the
 previous image (step 2 only updates the task definition/service, it
@@ -125,22 +136,26 @@ a restore from an RDS snapshot.
 
 `infra/envs/staging` reuses two account-level resources created only in
 `infra/envs/prod`'s state — the ECR repository and the GitHub OIDC deploy
-role. Don't run `terraform-setup.sh` unmodified against staging as-is; it
-hardcodes the prod path. Instead, from `infra/envs/staging`:
+role. First-time provisioning is scripted end-to-end:
 
 ```bash
-cd infra/envs/staging
-cp terraform.tfvars.example terraform.tfvars   # fill in values
-export TF_VAR_paystack_secret_key="sk_test_..."
-export TF_VAR_smtp_pass="..."
-terraform init
-terraform apply -var="image_uri=placeholder"   # first apply, same ordering caveats as prod — see infra/README.md
+cd scripts
+cp ../infra/envs/staging/terraform.tfvars.example ../infra/envs/staging/terraform.tfvars   # fill in values
+./terraform-setup-staging.sh
 ```
 
-`webapp-deployment.sh` targets `infra/envs/prod` by path; for staging,
-either parameterize the script's `cd` target or run the equivalent steps
-manually against `infra/envs/staging`. CI's `develop`-branch builds should
-point at the staging stack's Terraform outputs, not prod's.
+`terraform-setup-staging.sh` does the two-step bootstrap for you: it first
+`terraform apply -target=module.ecr`s in `infra/envs/prod` (creating the
+shared ECR repo if it doesn't exist yet), then runs `terraform init` /
+`plan` / `apply` in `infra/envs/staging`. If you'd rather do this by hand,
+or if prod is already provisioned and you only need the staging half, the
+equivalent manual steps and the same ordering caveats are in
+`infra/README.md`.
+
+For deploys after that, use `webapp-deployment-staging.sh` — it targets
+`infra/envs/staging` (cluster/service names, Terraform outputs) directly,
+so there's no `cd`-target parameterizing needed. CI's `develop`-branch
+builds should point at the staging stack's Terraform outputs, not prod's.
 
 **After the first apply of either GuardDuty or the SNS topic in
 `infra/envs/prod`**: check the inbox for `security_alert_email` and
@@ -212,6 +227,8 @@ listed there. Any future environment that picks its own subnet range
 | 5xx from ALB | ECS service events (`aws ecs describe-services`), CloudWatch app logs |
 | Migration task failed | `aws ecs describe-tasks` exit code/reason from step 3 above; check Prisma migration SQL for conflicts |
 | Paystack webhook rejected | Confirm signature verification isn't failing on a stale/rotated secret in Secrets Manager |
+| Subscription webhook processed but org plan/status didn't update | `subscription.create`/`disable` resolve the org by subscription code → customer code → member email — check `src/routes/webhooks.js:resolveOrganisationId` and confirm at least one of those matches an existing org |
+| User locked out (`423` on login) | Expected after 5 failed attempts within the lockout window; clears automatically after 15 minutes or on a successful password reset. To clear manually, null `failedLoginCount`/`lockedUntil` on the `User` row |
 | Audit log verify endpoint reports broken chain | Do not attempt to "fix" the chain — treat as a possible tamper event, preserve state, escalate |
 | CI blocked on Trivy/Semgrep | Check severity thresholds in `.github/workflows/ci.yml`; do not lower them to unblock without security sign-off |
 | `staging` apply fails: `couldn't find resource ... data.aws_ecr_repository.opsshield` | Prod's `module.ecr` hasn't been applied yet (or was destroyed), or staging's region doesn't match prod's — see "Ordering dependency" under §2a |
@@ -236,12 +253,20 @@ Before running:
 - Double-check `FRONTEND_BUCKET` and `STATE_STORE` are edited to the correct
   bucket names for this environment — this script deletes bucket contents.
 
+Set `ENV` (`prod` or `staging`) in the script before running; `ACCOUNT_ID`
+and `AWS_REGION` are resolved automatically.
+
 What it does, in order:
 1. 30s cancel window.
 2. Deletes any existing final DB snapshot with the same identifier (so the
-   next step doesn't collide with it).
+   next step doesn't collide with it). A missing snapshot on a first-ever
+   deployment is tolerated — the script logs it and continues rather than
+   aborting.
 3. Removes RDS deletion protection.
-4. Batch-deletes all images in the `opsshield` ECR repository.
+4. Deletes images in the `opsshield` ECR repository — for `staging`, via
+   an explicit `aws ecr batch-delete-image` before `terraform destroy`;
+   for `prod`, `module.ecr`'s `force_delete = true` lets `terraform
+   destroy` remove a non-empty repository directly.
 5. Empties the frontend S3 bucket (all versions).
 6. Runs `terraform destroy` for the full stack.
 7. **Manual gate**: if `terraform destroy` failed, stop here — do not

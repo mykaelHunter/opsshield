@@ -42,9 +42,11 @@ opsshield/
 │       ├── prod/                 composed prod stack (owns account-level singletons)
 │       └── staging/               same composition, reuses prod's ECR repo & OIDC role
 ├── scripts/                     deployment & lifecycle automation
-│   ├── terraform-setup.sh        bootstrap state bucket + first infra apply
-│   ├── webapp-deployment.sh       build/push image, run migrations, deploy backend + frontend
-│   ├── cleanup.sh                 tear down all AWS resources for the stack
+│   ├── terraform-setup-prod.sh    bootstrap state bucket + first infra apply (prod)
+│   ├── terraform-setup-staging.sh  applies prod's ECR module, then bootstraps staging
+│   ├── webapp-deployment-prod.sh   build/push image, migrate, seed, deploy backend + frontend (prod)
+│   ├── webapp-deployment-staging.sh same, targeting the staging stack
+│   ├── cleanup.sh                 tear down all AWS resources for the stack (prod or staging)
 │   └── manage-feature-flags.js    create/enable/disable global feature flags
 ├── docs/                        architecture.md, runbook.md, audit-report.md
 ├── .github/workflows/ci.yml     security scan → test → build/push → deploy
@@ -74,23 +76,29 @@ npm test
 
 ## Deployment scripts
 
-All three scripts live in `scripts/` and are meant to be run from there
-(each does `cd ..` internally to reach the repo root). See
+All scripts live in `scripts/` and are meant to be run from there
+(each does `cd ..` internally to reach the repo root). Provisioning and
+deployment are now split into prod/staging variants. See
 [`docs/runbook.md`](docs/runbook.md) for the full walkthrough, order of
 operations, and troubleshooting.
 
-1. **`terraform-setup.sh`** — creates the encrypted/versioned S3 state
+1. **`terraform-setup-prod.sh`** — creates the encrypted/versioned S3 state
    bucket, then runs the first `terraform plan`/`apply` in `infra/envs/prod`.
-2. **`webapp-deployment.sh`** — builds and pushes the backend image to ECR,
-   applies the ECS module, runs Prisma migrations as a one-off ECS task,
-   then builds and syncs the frontend to S3.
-3. **`cleanup.sh`** — full teardown: DB snapshot, deletion protection,
-   ECR images, frontend bucket, `terraform destroy`, state bucket, and
-   CloudWatch log groups.
+2. **`terraform-setup-staging.sh`** — applies `infra/envs/prod`'s `module.ecr`
+   first (staging reuses prod's ECR repo), then bootstraps `infra/envs/staging`.
+3. **`webapp-deployment-prod.sh`** / **`webapp-deployment-staging.sh`** —
+   build and push the backend image to ECR, force a new ECS deployment,
+   run Prisma migrations as a one-off ECS task, then run the seed task
+   (skipped if migrations fail), then build and sync the frontend to S3.
+4. **`cleanup.sh`** — full teardown for either stack (set `ENV`): DB
+   snapshot, deletion protection, ECR images, frontend bucket,
+   `terraform destroy`, state bucket, and CloudWatch log groups.
 
-All three require variables (`ACCOUNT_ID`, `AWS_REGION`, bucket/state names)
-to be edited in place before running, and export `TF_VAR_paystack_secret_key`
-/ `TF_VAR_smtp_pass` for the Terraform run.
+`ACCOUNT_ID` and `AWS_REGION` are now resolved automatically from the AWS
+CLI (`aws sts get-caller-identity` / `aws configure get region`) rather
+than hardcoded — only `ENV`, bucket/state names still need editing in
+place. All scripts export `TF_VAR_paystack_secret_key` / `TF_VAR_smtp_pass`
+for the Terraform run.
 
 ---
 
@@ -125,7 +133,7 @@ to be edited in place before running, and export `TF_VAR_paystack_secret_key`
 | PATCH | `/api/members/org/:orgId/:memberId/role` | Bearer + Admin | Change role |
 | GET | `/api/billing/org/:orgId` | Bearer + Member | Billing history |
 | POST | `/api/billing/org/:orgId/initiate` | Bearer + Admin | Start Paystack payment |
-| POST | `/api/webhooks/paystack` | Paystack HMAC | Payment webhook |
+| POST | `/api/webhooks/paystack` | Paystack HMAC | Payment webhook — handles `charge.success`, `subscription.create`, `subscription.disable` |
 | GET | `/health` | None | Health check |
 
 ---
@@ -177,9 +185,13 @@ aren't hitting the DB on every request.
 - **IDOR protection** — every org-scoped route uses `requireOrgMember` middleware.
 - **Mass assignment protection** — update endpoints use explicit field allowlists, never raw `req.body`.
 - **Paystack webhook verification** — HMAC-SHA512 via `crypto.timingSafeEqual` before processing.
+- **Subscription tracking** — `subscription.create`/`subscription.disable` events update `Organisation.subscriptionStatus`, `paystackSubscriptionCode`, and `paystackCustomerCode`; since these events don't carry our internal org id, the handler resolves it by subscription code → customer code → member email, in that order. A disabled subscription downgrades the org to the `FREE` plan.
 - **Append-only audit log** — SHA-256 hash chain, all writes go through `src/lib/audit.js`.
 - **JWT secrets** — from env vars / Secrets Manager only, app throws at startup if missing.
 - **Password reset** — random token hashed at rest, single-use, short TTL, refresh sessions revoked on reset.
+- **Invite tokens** — hashed at rest (`tokenHash`, not the raw token), same pattern as password reset.
+- **Account lockout** — 5 failed logins locks the account for 15 minutes (`failedLoginCount`/`lockedUntil` on `User`); cleared on successful login or password reset. Uses an atomic `increment` update to avoid undercounting concurrent attempts.
+- **Org soft delete** — `deletedAt` on `Organisation`, `Member`, `Invite`, and `Task`; reads that should exclude deleted rows (e.g. `/api/auth/me`) filter explicitly rather than relying on hard deletes.
 
 See [`docs/architecture.md`](docs/architecture.md) for how these fit together, and
 [`infra/README.md`](infra/README.md) for Terraform-specific design decisions.
