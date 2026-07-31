@@ -2,8 +2,8 @@
 
 set -euo pipefail
 
-ACCOUNT_ID=<your-iam-accountid>
-AWS_REGION=<your-region>
+ACCOUNT_ID=$(aws sts get-caller-identity --query Account --output text)
+AWS_REGION=$(aws configure get region)
 export TF_VAR_paystack_secret_key="sk_test_....."
 export TF_VAR_smtp_pass="<Any hex string>"
 export VITE_API_URL="https://<backend_domain_url_from_terraform>"
@@ -56,6 +56,8 @@ echo "Seed task: $SEED_ARN"
 aws ecs wait tasks-stopped --cluster "$CLUSTER" --tasks "$SEED_ARN" --region ${AWS_REGION}
 
 aws ecs describe-tasks --cluster "$CLUSTER" --tasks "$SEED_ARN" --region ${AWS_REGION} --query 'tasks[0].containers[0].{exitCode:exitCode,reason:reason}'
+
+aws ecs update-service --cluster opsshield-staging-cluster --service opsshield-staging-service --force-new-deployment --region ${AWS_REGION}
 
 echo ""
 echo "Migrations complete"

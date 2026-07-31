@@ -1,5 +1,6 @@
-const prisma = require('../lib/prisma');
-const audit  = require('../lib/audit');
+const prisma       = require('../lib/prisma');
+const audit        = require('../lib/audit');
+const featureFlags = require('../lib/featureFlags');
 
 async function get(req, res, next) {
   try {
@@ -96,4 +97,76 @@ async function remove(req, res, next) {
   } catch (err) { next(err); }
 }
 
-module.exports = { get, update, auditLog, verifyAuditChain, remove };
+async function listFeatureFlags(req, res, next) {
+  try {
+    const flags = await featureFlags.listForOrganisation(req.organisation.id);
+    return res.json({ flags });
+  } catch (err) { next(err); }
+}
+
+async function setFeatureFlagOverride(req, res, next) {
+  try {
+    const { key } = req.params;
+    const { enabled } = req.body;
+    const orgId = req.organisation.id;
+
+    const flag = await prisma.featureFlag.findUnique({ where: { key } });
+    if (!flag) {
+      return res.status(404).json({ error: `Unknown feature flag: ${key}` });
+    }
+
+    await prisma.organisationFeatureFlag.upsert({
+      where:  { organisationId_flagKey: { organisationId: orgId, flagKey: key } },
+      update: { enabled },
+      create: { organisationId: orgId, flagKey: key, enabled },
+    });
+
+    await audit.log({
+      action:         'feature_flag.override.set',
+      resource:       'feature_flag',
+      resourceId:     key,
+      actor:          req.user,
+      organisationId: orgId,
+      metadata:       { enabled },
+      ipAddress:      req.ip,
+    });
+
+    // Cache TTL is short (10s), so we don't bother invalidating on write —
+    // an admin toggling a flag will see it reflected within one TTL window.
+    return res.json({ key, enabled, isOverridden: true });
+  } catch (err) { next(err); }
+}
+
+async function clearFeatureFlagOverride(req, res, next) {
+  try {
+    const { key } = req.params;
+    const orgId = req.organisation.id;
+
+    const existing = await prisma.organisationFeatureFlag.findUnique({
+      where: { organisationId_flagKey: { organisationId: orgId, flagKey: key } },
+    });
+    if (!existing) {
+      return res.status(404).json({ error: 'No override set for this flag on this organisation' });
+    }
+
+    await prisma.organisationFeatureFlag.delete({
+      where: { organisationId_flagKey: { organisationId: orgId, flagKey: key } },
+    });
+
+    await audit.log({
+      action:         'feature_flag.override.clear',
+      resource:       'feature_flag',
+      resourceId:     key,
+      actor:          req.user,
+      organisationId: orgId,
+      ipAddress:      req.ip,
+    });
+
+    return res.json({ key, message: 'Override cleared — organisation now follows the global default' });
+  } catch (err) { next(err); }
+}
+
+module.exports = {
+  get, update, auditLog, verifyAuditChain, remove,
+  listFeatureFlags, setFeatureFlagOverride, clearFeatureFlagOverride,
+};

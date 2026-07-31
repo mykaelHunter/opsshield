@@ -18,7 +18,7 @@ automation are all in place. This is a working, deployable stack.
 | CI/CD (Gitleaks, Semgrep, Trivy, tests, ECR/ECS deploy via OIDC) | ✅ Complete |
 | Deployment automation scripts (`scripts/`) | ✅ Complete |
 | Security hardening — GuardDuty + Security Hub | 🟨 Infra in place, burn-in + pen test pending — see `docs/audit-report.md` |
-| Feature flags for launch day | ⬜ Not started |
+| Feature flags for launch day | ✅ Complete — global flags via CLI, per-org overrides via API — see below |
 | Staging environment (`infra/envs/staging`) | ✅ Complete — shares prod's ECR repo & GitHub OIDC role, separate VPC/state |
 
 ---
@@ -31,7 +31,7 @@ opsshield/
 │   ├── controllers/             auth, organisations, tasks, members, billing
 │   ├── routes/                  route definitions incl. webhooks
 │   ├── middleware/               auth, validate, error handling
-│   ├── lib/                     jwt, audit log, mailer, logger, prisma client
+│   ├── lib/                     jwt, audit log, mailer, logger, prisma client, feature flags
 │   └── __tests__/               Jest test suites
 ├── prisma/                      schema, migrations, seed script
 ├── frontend/                    React + Vite SPA (auth, tasks, members, billing)
@@ -44,7 +44,8 @@ opsshield/
 ├── scripts/                     deployment & lifecycle automation
 │   ├── terraform-setup.sh        bootstrap state bucket + first infra apply
 │   ├── webapp-deployment.sh       build/push image, run migrations, deploy backend + frontend
-│   └── cleanup.sh                 tear down all AWS resources for the stack
+│   ├── cleanup.sh                 tear down all AWS resources for the stack
+│   └── manage-feature-flags.js    create/enable/disable global feature flags
 ├── docs/                        architecture.md, runbook.md, audit-report.md
 ├── .github/workflows/ci.yml     security scan → test → build/push → deploy
 ├── Dockerfile                   multi-stage, non-root, stripped npm at runtime
@@ -108,6 +109,9 @@ to be edited in place before running, and export `TF_VAR_paystack_secret_key`
 | PATCH | `/api/organisations/:orgId` | Bearer + Admin | Update org |
 | GET | `/api/organisations/:orgId/audit-log` | Bearer + Admin | Audit log |
 | GET | `/api/organisations/:orgId/audit-log/verify` | Bearer + Admin | Verify hash chain |
+| GET | `/api/organisations/:orgId/feature-flags` | Bearer + Admin | List flags + effective state for org |
+| PUT | `/api/organisations/:orgId/feature-flags/:key` | Bearer + Admin | Set an org-level override |
+| DELETE | `/api/organisations/:orgId/feature-flags/:key` | Bearer + Admin | Clear override, revert to global default |
 | GET | `/api/tasks/org/:orgId` | Bearer + Member | List tasks |
 | POST | `/api/tasks/org/:orgId` | Bearer + Member | Create task |
 | GET | `/api/tasks/org/:orgId/:taskId` | Bearer + Member | Get task |
@@ -123,6 +127,48 @@ to be edited in place before running, and export `TF_VAR_paystack_secret_key`
 | POST | `/api/billing/org/:orgId/initiate` | Bearer + Admin | Start Paystack payment |
 | POST | `/api/webhooks/paystack` | Paystack HMAC | Payment webhook |
 | GET | `/health` | None | Health check |
+
+---
+
+## Feature flags
+
+Two levels, matching who's actually allowed to touch what:
+
+- **Global flags** — the platform-wide default (on or off). There's no
+  platform-level admin role in the app yet (only org-scoped admins), so
+  global flags are managed via a CLI script against the DB directly —
+  not an HTTP endpoint — using the same trust model as `scripts/`:
+  whoever can run it already has DB access.
+
+  ```bash
+  node scripts/manage-feature-flags.js list
+  node scripts/manage-feature-flags.js create beta-dashboard --description "New dashboard UI"
+  node scripts/manage-feature-flags.js enable beta-dashboard
+  node scripts/manage-feature-flags.js disable beta-dashboard
+  node scripts/manage-feature-flags.js delete beta-dashboard
+  ```
+
+- **Per-org overrides** — an org admin can opt their own org into (or out
+  of) any existing flag, independent of the global default. Useful for
+  staged rollouts ("turn this on for one pilot customer before flipping
+  it globally") or letting a specific tenant opt out of something new.
+  Exposed via the API — see the table above.
+
+**Using a flag in route/controller code:**
+
+```js
+const featureFlags = require('../lib/featureFlags');
+
+if (await featureFlags.isEnabled('beta-dashboard', req.organisation.id)) {
+  // gated behavior
+}
+```
+
+Resolution order: org override → global default → `false` if the flag
+key doesn't exist at all (fails closed, so a typo'd key degrades safely
+instead of throwing). Results are cached in-memory for ~10 seconds, so
+toggling a flag takes effect quickly without a restart, but checks
+aren't hitting the DB on every request.
 
 ---
 

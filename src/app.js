@@ -55,12 +55,20 @@ app.use(morgan('combined', {
 }));
 
 // ── Global rate limits ────────────────────────────────────────────
+// Skipped in test env only — integration tests share one IP/app instance
+// across many requests within the same 15-min window, which would
+// otherwise trip these limits well before any test-specific behavior
+// (e.g. account lockout) gets a chance to run. Production/dev behavior
+// is unaffected.
+const isTestEnv = process.env.NODE_ENV === 'test';
+
 const globalLimiter = rateLimit({
   windowMs: 15 * 60 * 1000, // 15 minutes
   max: 300,
   standardHeaders: true,
   legacyHeaders: false,
   message: { error: 'Too many requests, please try again later.' },
+  skip: () => isTestEnv,
 });
 
 const authLimiter = rateLimit({
@@ -69,6 +77,7 @@ const authLimiter = rateLimit({
   standardHeaders: true,
   legacyHeaders: false,
   message: { error: 'Too many authentication attempts, please try again later.' },
+  skip: () => isTestEnv,
 });
 
 app.use('/api/', globalLimiter);

@@ -119,3 +119,98 @@ describe('IDOR protection', () => {
     expect(res.status).toBe(403);
   });
 });
+
+describe('GET /api/auth/me', () => {
+  it('excludes organisations that have been soft-deleted', async () => {
+    const reg = await request(app).post('/api/auth/register').send({
+      email: 'ghostorg@example.com', password: 'Password123!',
+      firstName: 'Ghost', lastName: 'Org', orgName: 'Org To Delete',
+    });
+    const token = reg.body.accessToken;
+
+    const before = await request(app).get('/api/auth/me')
+      .set('Authorization', `Bearer ${token}`);
+    const orgId = before.body.organisations[0].id;
+    expect(before.body.organisations).toHaveLength(1);
+
+    const del = await request(app)
+      .delete(`/api/organisations/${orgId}`)
+      .set('Authorization', `Bearer ${token}`);
+    expect(del.status).toBe(200);
+
+    // Regression: after org_soft_delete, me() was still returning the
+    // now-deleted org because the Member/Organisation query never
+    // filtered on deletedAt — it showed up as a lingering/duplicate
+    // entry in the frontend org switcher.
+    const after = await request(app).get('/api/auth/me')
+      .set('Authorization', `Bearer ${token}`);
+    expect(after.body.organisations).toHaveLength(0);
+  });
+});
+
+describe('account lockout', () => {
+  const email = 'lockout-target@example.com';
+
+  beforeAll(async () => {
+    await request(app).post('/api/auth/register').send({
+      email, password: 'Password123!',
+      firstName: 'Lock', lastName: 'Target', orgName: 'Lockout Org',
+    });
+  });
+
+  it('locks the account after 5 consecutive failed attempts', async () => {
+    let res;
+    for (let i = 0; i < 5; i++) {
+      res = await request(app).post('/api/auth/login').send({
+        email, password: 'wrong-password',
+      });
+    }
+    // the 5th failure is what crosses the threshold — still reported
+    // as a generic 401, since the lockout itself has just been set
+    expect(res.status).toBe(401);
+
+    // 6th attempt, even with the CORRECT password, should now be blocked
+    const lockedRes = await request(app).post('/api/auth/login').send({
+      email, password: 'Password123!',
+    });
+    expect(lockedRes.status).toBe(423);
+    expect(lockedRes.body.error).toMatch(/temporarily locked/i);
+  });
+
+  it('does not lock out other accounts', async () => {
+    const res = await request(app).post('/api/auth/login').send({
+      email: 'test@example.com', // registered earlier in this file
+      password: 'Password123!',
+    });
+    expect(res.status).toBe(200);
+  });
+
+  it('resets the counter and unlocks on a successful login after the lock expires', async () => {
+    // simulate lockout window having already elapsed, without waiting 15 real minutes
+    const user = await prisma.user.findUnique({ where: { email } });
+    await prisma.user.update({
+      where: { id: user.id },
+      data: { lockedUntil: new Date(Date.now() - 1000) }, // 1s in the past
+    });
+
+    const res = await request(app).post('/api/auth/login').send({
+      email, password: 'Password123!',
+    });
+    expect(res.status).toBe(200);
+
+    const after = await prisma.user.findUnique({ where: { email } });
+    expect(after.failedLoginCount).toBe(0);
+    expect(after.lockedUntil).toBeNull();
+  });
+
+  it('does not increment the counter for an unknown email', async () => {
+    const res = await request(app).post('/api/auth/login').send({
+      email: 'never-registered@example.com',
+      password: 'whatever',
+    });
+    expect(res.status).toBe(401);
+    // no user row exists to check — this just confirms no crash/500
+    // and the generic message is preserved for unknown accounts
+    expect(res.body.error).toBe('Invalid email or password');
+  });
+});

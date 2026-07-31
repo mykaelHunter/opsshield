@@ -1,4 +1,4 @@
-import { useEffect, useState, useCallback } from 'react';
+import { useState } from 'react';
 import { useAuth } from '../context/AuthContext';
 import { api } from '../api';
 
@@ -8,11 +8,13 @@ export default function Members() {
   const [inviteRole, setInviteRole] = useState('MEMBER');
   const [message, setMessage] = useState(null);
   const [error, setError] = useState(null);
+  const [submitting, setSubmitting] = useState(false);
 
   async function handleInvite(e) {
     e.preventDefault();
     setError(null);
     setMessage(null);
+    setSubmitting(true);
     try {
       await api.inviteMember(activeOrg.id, { email: inviteEmail, role: inviteRole });
       setMessage(`Invitation sent to ${inviteEmail}`);
@@ -27,6 +29,8 @@ export default function Members() {
       } else {
         setError(err.body?.error || 'Failed to send invitation');
       }
+    } finally {
+      setSubmitting(false);
     }
   }
 
@@ -35,9 +39,14 @@ export default function Members() {
   return (
     <div className="page">
       <h1>Members</h1>
+      <p className="muted">{activeOrg.name} · manage who has access to this organisation</p>
+
       {activeOrg.role !== 'ADMIN' && (
-        <p className="muted">Only admins can invite or manage members.</p>
+        <div className="empty-state" style={{ marginTop: '1.25rem' }}>
+          Only admins can invite or manage members. Ask an org admin if you need to add someone.
+        </div>
       )}
+
       {activeOrg.role === 'ADMIN' && (
         <form className="inline-form" onSubmit={handleInvite}>
           <input
@@ -51,11 +60,12 @@ export default function Members() {
             <option value="MEMBER">Member</option>
             <option value="ADMIN">Admin</option>
           </select>
-          <button type="submit">Send invite</button>
+          <button type="submit" disabled={submitting}>{submitting ? 'Sending…' : 'Send invite'}</button>
         </form>
       )}
+
       {message && <div className="success">{message}</div>}
-      {error && <div className="error">{error}</div>}
+      {error && <div className="error" onClick={() => setError(null)}>{error}</div>}
     </div>
   );
 }

@@ -31,6 +31,14 @@ resource "aws_ecr_repository" "this" {
   # breaking the existing pipeline on `terraform apply`.
   image_tag_mutability = "MUTABLE"
 
+  # Without this, `terraform destroy` fails with RepositoryNotEmptyException
+  # the moment CI has pushed even one image — which in practice is always,
+  # since every merge to main pushes both a git-SHA tag and ":latest".
+  # Deleting a repo full of images this way is exactly what destroying this
+  # environment is supposed to do, so there's no real safety being traded
+  # away here — unlike, say, RDS, this isn't holding data you'd regret losing.
+  force_delete = true
+
   image_scanning_configuration {
     scan_on_push = true # feeds the same Trivy-style vulnerability visibility Security already relies on in CI
   }

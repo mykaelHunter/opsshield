@@ -9,9 +9,10 @@ echo "Do not run the script unless you are absolutely sure of what you are doing
 echo ""
 sleep 30s
 
+EXIT_CODE=0
 ENV=<environment>
-ACCOUNT_ID=<your-iam-account-id>
-AWS_REGION=<your-region>
+ACCOUNT_ID=$(aws sts get-caller-identity --query Account --output text)
+AWS_REGION=$(aws configure get region)
 FRONTEND_BUCKET=opsshield-${ENV}-frontend-${ACCOUNT_ID}
 STATE_STORE=<your_s3_state_bucket>
 export TF_VAR_paystack_secret_key="sk_test_....."
@@ -23,8 +24,8 @@ echo ""
 echo "Deleting any previous db snapshots"
 echo ""
 
-aws rds delete-db-snapshot --db-snapshot-identifier opsshield-${ENV}-db-final-snapshot || exit_code=$?
-if [ $exit_code -ne 0 ]; then
+aws rds delete-db-snapshot --db-snapshot-identifier opsshield-${ENV}-db-final-snapshot || EXIT_CODE=$?
+if [ ${EXIT_CODE} -ne 0 ]; then
     echo "There are no snapshots yet, First deployment"
 else
     echo "Old snapshot deleted"

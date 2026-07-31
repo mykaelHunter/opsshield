@@ -78,6 +78,16 @@ async function main() {
     ]
   });
 
+  await prisma.featureFlag.upsert({
+    where:  { key: 'beta-dashboard' },
+    update: {},
+    create: {
+      key: 'beta-dashboard',
+      description: 'Example flag — new dashboard UI, off by default',
+      enabled: false,
+    },
+  });
+
   console.log('Seed complete.');
   console.log('Admin:  admin@opsshield.io  / Password123!');
   console.log('Member: member@opsshield.io / Password123!');

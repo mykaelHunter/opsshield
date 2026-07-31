@@ -4,6 +4,15 @@ import { api } from '../api';
 
 const STATUSES = ['PENDING', 'IN_PROGRESS', 'AWAITING_APPROVAL', 'APPROVED', 'DONE'];
 
+const STATUS_LABELS = {
+  PENDING: 'Pending',
+  IN_PROGRESS: 'In progress',
+  AWAITING_APPROVAL: 'Awaiting approval',
+  APPROVED: 'Approved',
+  REJECTED: 'Rejected',
+  DONE: 'Done',
+};
+
 export default function Tasks() {
   const { activeOrg, user } = useAuth();
   const [tasks, setTasks] = useState([]);
@@ -73,6 +82,7 @@ export default function Tasks() {
   return (
     <div className="page">
       <h1>Tasks</h1>
+      <p className="muted">{activeOrg.name} · track work through to approval and completion</p>
       {error && <div className="error" onClick={() => setError(null)}>{error}</div>}
 
       <form className="inline-form" onSubmit={handleCreate}>
@@ -89,41 +99,58 @@ export default function Tasks() {
       </form>
 
       {loading ? (
-        <p>Loading…</p>
+        <div className="loading-rows">
+          <div className="skeleton-row" />
+          <div className="skeleton-row" />
+          <div className="skeleton-row" />
+        </div>
       ) : tasks.length === 0 ? (
-        <p className="muted">No tasks yet.</p>
+        <div className="empty-state">
+          <p style={{ margin: 0, fontWeight: 600, color: 'var(--text)' }}>No tasks yet</p>
+          <p style={{ margin: '0.35rem 0 0' }}>Add your first task above to start tracking it here.</p>
+        </div>
       ) : (
-        <table className="table">
-          <thead>
-            <tr>
-              <th>Title</th>
-              <th>Status</th>
-              <th>Approval</th>
-              <th>Actions</th>
-            </tr>
-          </thead>
-          <tbody>
-            {tasks.map((task) => (
-              <tr key={task.id}>
-                <td>{task.title}</td>
-                <td>
-                  <select value={task.status} onChange={(e) => handleStatusChange(task, e.target.value)}>
-                    {STATUSES.map((s) => <option key={s} value={s}>{s}</option>)}
-                  </select>
-                </td>
-                <td>{task.requiresApproval ? 'Required' : '—'}</td>
-                <td>
-                  {task.status === 'AWAITING_APPROVAL' && task.createdById !== user.id && (
-                    <>
-                      <button onClick={() => handleApprove(task)}>Approve</button>
-                      <button onClick={() => handleReject(task)}>Reject</button>
-                    </>
-                  )}
-                </td>
+        <div className="table-wrap">
+          <table className="table">
+            <thead>
+              <tr>
+                <th>Title</th>
+                <th>Status</th>
+                <th>Approval</th>
+                <th>Actions</th>
               </tr>
-            ))}
-          </tbody>
-        </table>
+            </thead>
+            <tbody>
+              {tasks.map((task) => (
+                <tr key={task.id}>
+                  <td>{task.title}</td>
+                  <td>
+                    <div className="status-cell">
+                      <span className={`status-dot status-dot--${task.status}`} />
+                      <select value={task.status} onChange={(e) => handleStatusChange(task, e.target.value)}>
+                        {STATUSES.map((s) => <option key={s} value={s}>{STATUS_LABELS[s]}</option>)}
+                        {task.status === 'REJECTED' && <option value="REJECTED">{STATUS_LABELS.REJECTED}</option>}
+                      </select>
+                    </div>
+                  </td>
+                  <td>
+                    {task.requiresApproval
+                      ? <span className="pill pill--required">Required</span>
+                      : <span className="muted">—</span>}
+                  </td>
+                  <td>
+                    {task.status === 'AWAITING_APPROVAL' && task.createdById !== user.id && (
+                      <>
+                        <button className="btn btn-approve" onClick={() => handleApprove(task)}>Approve</button>
+                        <button className="btn btn-reject" onClick={() => handleReject(task)}>Reject</button>
+                      </>
+                    )}
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
       )}
     </div>
   );

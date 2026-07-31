@@ -9,20 +9,24 @@ datasource db {
 }
 
 model Organisation {
-  id          String   @id @default(uuid())
-  name        String
-  slug        String   @unique
-  plan        Plan     @default(FREE)
-  paystackRef String?
-  deletedAt   DateTime?
-  createdAt   DateTime @default(now())
-  updatedAt   DateTime @updatedAt
+  id                       String    @id @default(uuid())
+  name                     String
+  slug                     String    @unique
+  plan                     Plan      @default(FREE)
+  paystackRef              String?
+  paystackSubscriptionCode String?   @unique
+  paystackCustomerCode     String?
+  subscriptionStatus       SubscriptionStatus @default(NONE)
+  deletedAt                DateTime?
+  createdAt                DateTime  @default(now())
+  updatedAt                DateTime  @updatedAt
 
   members     Member[]
   tasks       Task[]
   invites     Invite[]
   auditLogs   AuditLog[]
   billing     Billing[]
+  featureFlagOverrides OrganisationFeatureFlag[]
 }
 
 model User {
@@ -33,6 +37,8 @@ model User {
   lastName          String
   resetTokenHash    String?
   resetTokenExpiry  DateTime?
+  failedLoginCount  Int       @default(0)
+  lockedUntil       DateTime?
   createdAt         DateTime  @default(now())
   updatedAt         DateTime  @updatedAt
 
@@ -178,4 +184,41 @@ enum BillingStatus {
   PENDING
   SUCCESS
   FAILED
+}
+
+enum SubscriptionStatus {
+  NONE
+  ACTIVE
+  DISABLED
+}
+
+// Global flags — the platform-wide default. Managed via
+// scripts/manage-feature-flags.js, not an HTTP API (no platform-level
+// admin auth exists yet, only org-scoped admins — see OrganisationFeatureFlag
+// below for the tenant-facing side).
+model FeatureFlag {
+  key         String    @id
+  description String?
+  enabled     Boolean   @default(false)
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+
+  organisationOverrides OrganisationFeatureFlag[]
+}
+
+// Per-org override of a flag's global default. Presence of a row means
+// "this org has an explicit setting"; absence means "fall back to
+// FeatureFlag.enabled". Managed by org admins for their own org only.
+model OrganisationFeatureFlag {
+  id             String   @id @default(uuid())
+  organisationId String
+  flagKey        String
+  enabled        Boolean
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  organisation Organisation @relation(fields: [organisationId], references: [id], onDelete: Cascade)
+  flag         FeatureFlag  @relation(fields: [flagKey], references: [key], onDelete: Cascade)
+
+  @@unique([organisationId, flagKey])
 }

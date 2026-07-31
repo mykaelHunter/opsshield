@@ -8,8 +8,8 @@ echo "You can use the terraform.tfvars.example as a template"
 echo "You have 10s to cancel if you have not"
 sleep 10s
 
-ACCOUNT_ID=<your-iam-accountid>
-AWS_REGION=<your-region>
+ACCOUNT_ID=$(aws sts get-caller-identity --query Account --output text)
+AWS_REGION=$(aws configure get region)
 export TF_VAR_paystack_secret_key="sk_test_....."
 export TF_VAR_smtp_pass="<Any hex string>" 
 
