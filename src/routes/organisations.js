@@ -31,4 +31,21 @@ router.delete('/:orgId',
   orgController.remove
 );
 
+router.get('/:orgId/feature-flags',
+  authenticate, requireOrgMember, requireAdmin,
+  orgController.listFeatureFlags
+);
+
+router.put('/:orgId/feature-flags/:key',
+  authenticate, requireOrgMember, requireAdmin,
+  [body('enabled').isBoolean().withMessage('enabled must be true or false')],
+  validate,
+  orgController.setFeatureFlagOverride
+);
+
+router.delete('/:orgId/feature-flags/:key',
+  authenticate, requireOrgMember, requireAdmin,
+  orgController.clearFeatureFlagOverride
+);
+
 module.exports = router;
