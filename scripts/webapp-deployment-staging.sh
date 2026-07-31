@@ -24,8 +24,6 @@ echo "Image pushed successfully"
 echo ""
 sleep 30s
 
-aws ecs update-service --cluster opsshield-staging-cluster --service opsshield-staging-service --force-new-deployment --region ${AWS_REGION}
-
 echo "Running database migrations"
 echo ""
 
@@ -58,6 +56,8 @@ echo "Seed task: $SEED_ARN"
 aws ecs wait tasks-stopped --cluster "$CLUSTER" --tasks "$SEED_ARN" --region ${AWS_REGION}
 
 aws ecs describe-tasks --cluster "$CLUSTER" --tasks "$SEED_ARN" --region ${AWS_REGION} --query 'tasks[0].containers[0].{exitCode:exitCode,reason:reason}'
+
+aws ecs update-service --cluster opsshield-staging-cluster --service opsshield-staging-service --force-new-deployment --region ${AWS_REGION}
 
 echo ""
 echo "Migrations complete"
