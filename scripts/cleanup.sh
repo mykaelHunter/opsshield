@@ -109,7 +109,6 @@ echo "Deleting cloudwatch logs(optional)"
 echo "You have 30s to decide"
 sleep 30s
 
-aws logs delete-log-group --log-group-name "/opsshield/opsshield-${ENV}/vpc-flow-logs" --region ${AWS_REGION}
 aws logs delete-log-group --log-group-name "/aws/ecs/containerinsights/opsshield-${ENV}-cluster/performance" --region ${AWS_REGION}
 aws logs delete-log-group --log-group-name "/aws/rds/instance/opsshield-${ENV}-db/postgresql" --region ${AWS_REGION}
 echo ""
