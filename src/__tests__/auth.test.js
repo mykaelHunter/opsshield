@@ -120,6 +120,34 @@ describe('IDOR protection', () => {
   });
 });
 
+describe('GET /api/auth/me', () => {
+  it('excludes organisations that have been soft-deleted', async () => {
+    const reg = await request(app).post('/api/auth/register').send({
+      email: 'ghostorg@example.com', password: 'Password123!',
+      firstName: 'Ghost', lastName: 'Org', orgName: 'Org To Delete',
+    });
+    const token = reg.body.accessToken;
+
+    const before = await request(app).get('/api/auth/me')
+      .set('Authorization', `Bearer ${token}`);
+    const orgId = before.body.organisations[0].id;
+    expect(before.body.organisations).toHaveLength(1);
+
+    const del = await request(app)
+      .delete(`/api/organisations/${orgId}`)
+      .set('Authorization', `Bearer ${token}`);
+    expect(del.status).toBe(200);
+
+    // Regression: after org_soft_delete, me() was still returning the
+    // now-deleted org because the Member/Organisation query never
+    // filtered on deletedAt — it showed up as a lingering/duplicate
+    // entry in the frontend org switcher.
+    const after = await request(app).get('/api/auth/me')
+      .set('Authorization', `Bearer ${token}`);
+    expect(after.body.organisations).toHaveLength(0);
+  });
+});
+
 describe('account lockout', () => {
   const email = 'lockout-target@example.com';
 

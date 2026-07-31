@@ -334,7 +334,11 @@ async function resetPassword(req, res, next) {
 
 async function me(req, res) {
   const memberships = await prisma.member.findMany({
-    where: { userId: req.user.id },
+    where: {
+      userId:    req.user.id,
+      deletedAt: null,
+      organisation: { deletedAt: null },
+    },
     include: { organisation: { select: { id: true, name: true, slug: true, plan: true } } },
   });
 

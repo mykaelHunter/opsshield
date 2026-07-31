@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { useNavigate, useSearchParams, Link } from 'react-router-dom';
 import { api } from '../api';
 import { useAuth } from '../context/AuthContext';
+import AuthBrand from '../components/AuthBrand';
 
 export default function AcceptInvite() {
   const [params] = useSearchParams();
@@ -40,8 +41,11 @@ export default function AcceptInvite() {
     return (
       <div className="auth-page">
         <div className="auth-form">
-          <p>Missing invitation token.</p>
-          <Link to="/login">Back to login</Link>
+          <AuthBrand />
+          <p className="error">Missing invitation token.</p>
+          <div className="auth-links">
+            <Link to="/login">Back to login</Link>
+          </div>
         </div>
       </div>
     );
@@ -56,8 +60,9 @@ export default function AcceptInvite() {
   return (
     <div className="auth-page">
       <form className="auth-form" onSubmit={handleSubmit}>
+        <AuthBrand />
         <h1>Accept invitation</h1>
-        {error && <div className="error">{error}</div>}
+        {error && <div className="error" onClick={() => setError(null)}>{error}</div>}
         <label>
           Email (the address this invite was sent to)
           <input type="email" required value={form.email} onChange={update('email')} />
